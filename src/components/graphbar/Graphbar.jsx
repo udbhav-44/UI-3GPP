@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback, useContext } from "react";
+import React, { useState, useEffect, useMemo, useCallback, useContext, useRef } from "react";
 // import Plot from "react-plotly.js";
 // import Papa from "papaparse";
 import "./graphbar.css";
@@ -134,10 +134,9 @@ const createSampleGraph = (graphData) => {
 
 
 
-const GraphBar = () => {
-    const [isOpen, setIsOpen] = useState(false);
+const GraphBar = ({ isOpen, onToggle, offset = 0, drawerWidth = 420, onResize }) => {
     const [popupData, setPopupData] = useState(null);
-    const [activeButton, setActiveButton] = useState(1);
+    const graphContainerRef = useRef(null);
     // const [chartType, setChartType] = useState("candlestick");
     // const [companyData, setCompanyData] = useState([]); // Company metadata
     // const [stockData, setStockData] = useState({}); // Stock data for all companies
@@ -175,18 +174,66 @@ const GraphBar = () => {
     }, [graphData, setNodes, setEdges]);
 
     const handleNodeMouseEnter = useCallback((event, node) => {
-        // Get the position of the click event
-        const { clientX, clientY } = event;
-        // Set the popup data and position
+        const container = graphContainerRef.current;
+        if (!container) {
+            return;
+        }
+        const bounds = container.getBoundingClientRect();
         setPopupData({
             data: node.data,
-            position: { x: clientX, y: clientY },
+            position: { x: event.clientX - bounds.left, y: event.clientY - bounds.top },
         });
-    });
+    }, []);
+
+    const handleNodeMouseMove = useCallback((event, node) => {
+        const container = graphContainerRef.current;
+        if (!container) {
+            return;
+        }
+        const bounds = container.getBoundingClientRect();
+        setPopupData((prev) => {
+            if (!prev || prev.data?.label !== node.data?.label) {
+                return prev;
+            }
+            return {
+                ...prev,
+                position: { x: event.clientX - bounds.left, y: event.clientY - bounds.top },
+            };
+        });
+    }, []);
 
     const handleNodeMouseLeave = useCallback(() => {
         setPopupData(null);
     }, []);
+
+    const handleResizeStart = useCallback(
+        (event) => {
+            if (!isOpen || !onResize) {
+                return;
+            }
+            event.preventDefault();
+            const initialCursor = document.body.style.cursor;
+            const initialUserSelect = document.body.style.userSelect;
+            document.body.style.cursor = "ew-resize";
+            document.body.style.userSelect = "none";
+
+            const handleMove = (moveEvent) => {
+                const nextWidth = window.innerWidth - moveEvent.clientX;
+                onResize(nextWidth);
+            };
+
+            const handleUp = () => {
+                document.body.style.cursor = initialCursor;
+                document.body.style.userSelect = initialUserSelect;
+                window.removeEventListener("pointermove", handleMove);
+                window.removeEventListener("pointerup", handleUp);
+            };
+
+            window.addEventListener("pointermove", handleMove);
+            window.addEventListener("pointerup", handleUp);
+        },
+        [isOpen, onResize]
+    );
 
 
     const [tableData, setTableData] = useState([]);
@@ -269,36 +316,44 @@ const GraphBar = () => {
 
 
     return (
-        <div className="graph-main">
+        <div
+            className="graph-main"
+            style={{ right: `${offset}px`, "--drawer-width": `${drawerWidth}px` }}
+        >
             <button
                 className={`toggle-button ${isOpen ? "open" : "closed"}`}
-                onClick={() => setIsOpen((prev) => !prev)}
+                onClick={() => onToggle(!isOpen)}
             >
-                {isOpen ? "→" : "←"}
+                {isOpen ? "Graph →" : "Graph ←"}
             </button>
 
             <div className={`graph-bar ${isOpen ? "open" : "closed"}`}>
+                <div
+                    className="drawer-resize-handle"
+                    role="separator"
+                    aria-label="Resize graph panel"
+                    onPointerDown={handleResizeStart}
+                />
                 {isOpen && (
-                    <div className="buttons-container">
-                        <button
-                            className= "graph-button on"
-                            onClick={() =>
-                                {
-                                    setActiveButton(1);
-                                    console.log("Graph Button Clicked");
-                                }}
-                        >
-                            Graph</button>
-                        {/* <button
-                            className={`graph-button ${activeButton === 2 ? "on" : "off"}`}
-                            onClick={() => setActiveButton(2)}
-                        >
-                            Data Visualization</button> */}
+                    <div className="panel-header">
+                        <div>
+                            <p className="panel-title">Graph View</p>
+                            <p className="panel-subtitle">Relationship map</p>
+                        </div>
+                        <span className="panel-pill">Live</span>
                     </div>
                 )}
-
-                {activeButton === 1 && (
-                    <div className="graph-render" style={{ height: '500px', width: '100%' , marginTop:'10px'}}>
+                <div
+                    className="graph-render"
+                    style={{ height: '500px', width: '100%', marginTop: '10px' }}
+                    ref={graphContainerRef}
+                >
+                    {nodes.length === 0 ? (
+                        <div className="graph-empty">
+                            <p>No graph yet.</p>
+                            <span>Run a query to generate the relationship map.</span>
+                        </div>
+                    ) : (
                         <ReactFlow
                             nodes={nodes}
                             edges={edges}
@@ -307,41 +362,42 @@ const GraphBar = () => {
                             fitView
                             attributionPosition="top-right"
                             onNodeMouseEnter={handleNodeMouseEnter}
+                            onNodeMouseMove={handleNodeMouseMove}
                             onNodeMouseLeave={handleNodeMouseLeave}
                         >
                             <Controls />
                             <Background color="#1C1CF0" gap={6} variant="dots" />
                         </ReactFlow>
-                        {popupData && (
-                            <div
-                                style={{
-                                    top: popupData.position.y + 10, // Offset from click
-                                    left: popupData.position.x + 10,
-                                    color: "black",
-                                    padding: "15px",
-                                    zIndex: 1000,
-                                    backgroundColor: '#e6f3ff',
-                                    height: '100%'
-                                }}
-                            >
-                                <div className="details">
-                                    <strong>Node Details:</strong>
-                                    {popupData.data.metadata && (
-                                        <div>
-                                            <ul style={{ listStyleType: "none", padding: 0 }}>
-                                                {Object.entries(popupData.data.metadata).map(([key, value]) => (
-                                                    <li key={key} style={{ marginBottom: "5px" }}>
-                                                        <strong>{key}:</strong> {value}
-                                                    </li>
-                                                ))}
-                                            </ul>
-                                        </div>
-                                    )}
-                                </div>
+                    )}
+                    {popupData && (
+                        <div
+                            className="graph-tooltip"
+                            style={{
+                                top: popupData.position.y + 10, // Offset from click
+                                left: popupData.position.x + 10,
+                                color: "black",
+                                padding: "15px",
+                                zIndex: 1000,
+                                backgroundColor: '#e6f3ff',
+                            }}
+                        >
+                            <div className="details">
+                                <strong>Node Details:</strong>
+                                {popupData.data.metadata && (
+                                    <div>
+                                        <ul style={{ listStyleType: "none", padding: 0 }}>
+                                            {Object.entries(popupData.data.metadata).map(([key, value]) => (
+                                                <li key={key} style={{ marginBottom: "5px" }}>
+                                                    <strong>{key}:</strong> {value}
+                                                </li>
+                                            ))}
+                                        </ul>
+                                    </div>
+                                )}
                             </div>
-                        )}
-                    </div>
-                )}
+                        </div>
+                    )}
+                </div>
                 {/* { /activeButton === 2 && (
                     <div className="chart-container">
                         <div style={{ marginBottom: "20px" }}>

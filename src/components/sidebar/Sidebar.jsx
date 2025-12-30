@@ -4,267 +4,194 @@ import { useContext, useState } from "react";
 import { Context } from "../../context/Context";
 import Viewer from "../file/fileSystem";
 
+const Sidebar = ({ onLogout }) => {
+  const [extended, setExtended] = useState(true);
 
-const Sidebar = () => {
-	const [extended, setExtended] = useState(true);
-	const { prevPrompts, prevResults, setRecentPrompt, newChat, socket, setSocket, setIsUpload, isUpload } = useContext(Context);
-	const [isPopupVisible, setPopupVisible] = useState(false);
-	const [isFilePopupVisible, setFilePopupVisible] = useState(false);
+  const {
+    threads,
+    activeThreadId,
+    selectThread,
+    newChat,
+    deleteThread,
+    socket,
+    setIsUpload,
+    isUpload
+  } = useContext(Context);
 
-	const [formData, setFormData] = useState({
-		GoogleDrive_ObjectId: '',
-		File_Link: '',
-		GEMINI_API_KEY_30: '',
-		OPEN_AI_API_KEY_30: '',
-		FINNHUB_API_KEY_30: '',
-		GOOGLE_CSE_ID_30: '',
-		TAVILY_API_KEY_30: '',
-		GOOGLE_API_KEY_30: '',
-		JINA_API_KEY_30: '',
-		INDIAN_KANOON_API_KEY_30: '',
-		jsonFile: null
-	});
+  const [isPopupVisible, setPopupVisible] = useState(false);
+  const [isFilePopupVisible, setFilePopupVisible] = useState(false);
 
-	// Function to close the popup
-	const closePopup = () => {
-		setPopupVisible(false);
-		setFilePopupVisible(false);
-		setIsUpload(false);
-	};
+  const [formData, setFormData] = useState({
+    GEMINI_API_KEY_30: "",
+    OPEN_AI_API_KEY_30: "",
+    TAVILY_API_KEY_30: "",
+    VOYAGE_API_KEY: ""
+  });
 
-	// Function to open the popup (optional if needed)
-	const openPopup = () => {
-		setPopupVisible(true);
-	};
+  // -------------------------
+  // Popup controls
+  // -------------------------
+  const closePopup = () => {
+    setPopupVisible(false);
+    setFilePopupVisible(false);
+    setIsUpload(false);
+  };
 
-	const openFilePopup = () => {
-		setFilePopupVisible(true);
-	};
+  const openPopup = () => setPopupVisible(true);
+  const openFilePopup = () => setFilePopupVisible(true);
 
-	const loadPreviousPrompt = async (prompt) => {
-		alert(result)
-		setRecentPrompt(prompt);
+  // -------------------------
+  // Credentials form
+  // -------------------------
+  const handleChange = (e) => {
+    const { name, value } = e.target;
+    setFormData(prev => ({ ...prev, [name]: value }));
+  };
 
-		await onRender(prompt);
-	};
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    if (socket && socket.readyState === WebSocket.OPEN) {
+      socket.send(JSON.stringify({ type: "cred", formData }));
+    }
+    closePopup();
+  };
 
+  return (
+    <>
+      <div className={`sidebar ${extended ? "extended" : "collapsed"}`}>
+        {/* ---------------- TOP ---------------- */}
+        <div className="top">
+          <div className="buttons">
+            <img
+              src={assets.menu_icon}
+              className="menu"
+              title="Toggle Sidebar"
+              onClick={() => setExtended(p => !p)}
+            />
+            <img
+              src={assets.edit_icon}
+              className="new"
+              title="New Chat"
+              onClick={newChat}
+            />
+          </div>
+        </div>
 
-	// Handle input changes
-	const handleChange = (e) => {
-		const { name, value } = e.target;
-		setFormData((prevData) => ({
-			...prevData,
-			[name]: value
-		}));
-	};
+        {/* ---------------- RECENT ---------------- */}
+        <div className="recent">
+          <p className="recent-title">Recent</p>
+          {threads.map((thread) => (
+            <div
+              key={thread.id}
+              className={`recent-entry ${String(activeThreadId) === String(thread.id) ? "active" : ""}`}
+              onClick={() => selectThread(thread.id)}
+            >
+              <img src={assets.message_icon} alt="" />
+              <p className="thread-title">
+                {(thread.title || thread.last_message || "New chat").slice(0, 20)}...
+              </p>
+              {extended && (
+                <button
+                  type="button"
+                  className="thread-delete"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    deleteThread(thread.id);
+                  }}
+                  aria-label="Delete chat"
+                  title="Delete chat"
+                >
+                  x
+                </button>
+              )}
+            </div>
+          ))}
+        </div>
 
-	const handleFileChange = (e) => {
-		const { name, files } = e.target;
+        {/* ---------------- BOTTOM ---------------- */}
+        <div className="bottom">
+          <div className="bottom-item recent-entry" onClick={openFilePopup}>
+            <img src={assets.history_icon} alt="" title="Files" />
+            {extended && <p>Files</p>}
+          </div>
 
-		// Ensure the file exists and is of type JSON
-		if (files && files[0] && files[0].type === 'application/json') {
-			const file = files[0];
+          <div className="bottom-item recent-entry" onClick={openPopup}>
+            <img src={assets.setting_icon} alt="" title="Credentials" />
+            {extended && <p>Credentials</p>}
+          </div>
 
-			// Create a FileReader to read the file
-			const reader = new FileReader();
+          <div
+            className="bottom-item recent-entry"
+            onClick={() => onLogout && onLogout()}
+          >
+            <img src={assets.user_icon} alt="" title="Logout" />
+            {extended && <p>Logout</p>}
+          </div>
+        </div>
+      </div>
 
-			reader.onload = () => {
-				try {
-					// Parse the JSON data from the file
-					const parsedData = JSON.parse(reader.result);
+      {/* ---------------- CREDENTIALS POPUP ---------------- */}
+      {isPopupVisible && (
+        <div className="popup">
+          <div className="popup-overlay" onClick={closePopup}></div>
+          <div className="popup-form">
+            <h2>Credentials</h2>
+            <form className="custom-form" onSubmit={handleSubmit}>
+              <label>OpenAI API Key</label>
+              <input
+                name="OPEN_AI_API_KEY_30"
+                value={formData.OPEN_AI_API_KEY_30}
+                onChange={handleChange}
+              />
 
-					// Set the parsed data into the formData
-					setFormData((prevData) => ({
-						...prevData,
-						[name]: parsedData // Store parsed JSON data
-					}));
-				} catch (error) {
-					console.error('Error parsing JSON:', error);
-				}
-			};
+              <label>Gemini API Key</label>
+              <input
+                name="GEMINI_API_KEY_30"
+                value={formData.GEMINI_API_KEY_30}
+                onChange={handleChange}
+              />
 
-			// Read the file as text (string)
-			reader.readAsText(file);
-		} else {
-			console.error('Please upload a valid JSON file');
-		}
-	};
+              <label>Tavily API Key</label>
+              <input
+                name="TAVILY_API_KEY_30"
+                value={formData.TAVILY_API_KEY_30}
+                onChange={handleChange}
+              />
 
-	// Handle form submission
-	const handleSubmit = (e) => {
-		e.preventDefault();
-		// You can now use the formData object
-		console.log(formData);
-		if (socket && socket.readyState === WebSocket.OPEN) {
-			socket.send(JSON.stringify({ type: 'cred', formData }));
-		}
-		// Optionally, you can handle the formData (e.g., send it to an API or store it)
-		closePopup();
-	};
+              <label>Voyage API Key</label>
+              <input
+                name="VOYAGE_API_KEY"
+                value={formData.VOYAGE_API_KEY}
+                onChange={handleChange}
+              />
 
-	return (
-		<>
-			<div className={`sidebar ${extended ? "extended" : "collapsed"}`}>
-				<div className="top">
-					<div className={`buttons ${extended ? "extended" : "collapsed"}`}>
-						<img
-							src={assets.menu_icon}
-							className="menu"
-							id="dash"
-							title="Dashboard"
-							alt="menu-icon"
-							onClick={() => setExtended((prev) => !prev)}
-						/>
-						<img
-							src={assets.edit_icon}
-							className="new"
-							id="new"
-							alt="new-icon"
-							title="New Chat"
-							onClick={() => {
-								newChat()
-							}}
-						/>
-					</div>
-				</div>
+              <button type="submit">Submit</button>
+            </form>
+          </div>
+        </div>
+      )}
 
-				<div className="recent">
-					<p className="recent-title">Recent</p>
-					{prevPrompts.slice().reverse().map((item, index) => {
-						return (
-							<div key={index} onClick={() => loadPreviousPrompt(item)} className="recent-entry">
-								<img src={assets.message_icon} alt="" />
-								<p>{item.slice(0, 10)}...</p>
-							</div>
-						);
-					})}
+      {/* ---------------- FILE VIEWER ---------------- */}
+      {isFilePopupVisible && (
+        <div className="popup">
+          <div className="popup-overlay" onClick={closePopup}></div>
+          <div className="popup-form">
+            <Viewer />
+          </div>
+        </div>
+      )}
 
-				</div>
-				<div className="bottom">
-					<div className="bottom-item recent-entry" onClick={openFilePopup}>
-						<img src={assets.history_icon}
-							alt=""
-							title="Files"
-							 />
-						{extended ? <p>Files</p> : null}
-					</div>
-					<div className="bottom-item recent-entry" onClick={openPopup}>
-						<img src={assets.setting_icon}
-							alt=""
-							title="Credentials"
-
-						/>
-						{extended ? <p>Credentials</p> : null}
-					</div>
-				</div>
-			</div>
-			{isPopupVisible && (
-				<div className="popup">
-					<div className="popup-overlay" onClick={closePopup}></div>
-					<div className="popup-form">
-						<h2>Credentials</h2>
-						<form className="custom-form">
-							<div>
-
-								<label htmlFor="OPEN_AI_API_KEY_30">OpenAI API Key</label>
-								<input
-									type="text"
-									id="OPEN_AI_API_KEY_30"
-									name="OPEN_AI_API_KEY_30"
-									value={formData.OPEN_AI_API_KEY_30}
-									onChange={handleChange}
-									placeholder="API key for OpenAI"
-								/>
-
-								<label htmlFor="GEMINI_API_KEY_30">Gemini API Key</label>
-								<input
-									type="text"
-									id="GEMINI_API_KEY_30"
-									name="GEMINI_API_KEY_30"
-									value={formData.GEMINI_API_KEY_30}
-									onChange={handleChange}
-									placeholder="API key for Gemini"
-								/>
-
-
-								<label htmlFor="FINNHUB_API_KEY_30">Finnhub API Key</label>
-								<input
-									type="text"
-									id="FINNHUB_API_KEY_30"
-									name="FINNHUB_API_KEY_30"
-									value={formData.FINNHUB_API_KEY_30}
-									onChange={handleChange}
-									placeholder="API key for Finnhub"
-								/>
-
-								<label htmlFor="TAVILY_API_KEY_30">Tavily API Key</label>
-								<input
-									type="text"
-									id="TAVILY_API_KEY_30"
-									name="TAVILY_API_KEY_30"
-									value={formData.TAVILY_API_KEY_30}
-									onChange={handleChange}
-									placeholder="API key for Tavily"
-								/>
-
-								<label htmlFor="VOYAGE_API_KEY">Voyage API Key</label>
-								<input
-									type="text"
-									id="VOYAGE_API_KEY"
-									name="VOYAGE_API_KEY"
-									value={formData.VOYAGE_API_KEY}
-									onChange={handleChange}
-									placeholder="API key for Voyage"
-								/>
-
-								<label htmlFor="JINA_API_KEY_30">Jina API Key</label>
-								<input
-									type="text"
-									id="JINA_API_KEY_30"
-									name="JINA_API_KEY_30"
-									value={formData.JINA_API_KEY_30}
-									onChange={handleChange}
-									placeholder="API key for Jina"
-								/>
-
-								<label htmlFor="INDIAN_KANOON_API_KEY_30">Indian Kanoon API Key</label>
-								<input
-									type="text"
-									id="INDIAN_KANOON_API_KEY_30"
-									name="INDIAN_KANOON_API_KEY_30"
-									value={formData.INDIAN_KANOON_API_KEY_30}
-									onChange={handleChange}
-									placeholder="API key for Indian Kanoon"
-								/>
-							</div>
-
-							<button type="submit" onClick={handleSubmit}>Submit</button>
-						</form>
-					</div>
-				</div>
-			)}
-			{isFilePopupVisible && (
-				<>
-					<div className="popup">
-						<div className="popup-overlay" onClick={closePopup}></div>
-						<div className="popup-form">
-							<Viewer />
-						</div>
-					</div>
-				</>
-			)}
-			{isUpload && (
-				<>	
-					<div className="popup">
-						<div className="popup-overlay" onClick={closePopup}></div>
-						<div className="popup-form" >
-							<h2>File Uploaded Successfully</h2>
-						</div>
-					</div>
-				</>
-			)}
-		</>
-	);
+      {/* ---------------- UPLOAD SUCCESS ---------------- */}
+      {isUpload && (
+        <div className="popup">
+          <div className="popup-overlay" onClick={closePopup}></div>
+          <div className="popup-form">
+            <h2>File Uploaded Successfully</h2>
+          </div>
+        </div>
+      )}
+    </>
+  );
 };
 
 export default Sidebar;

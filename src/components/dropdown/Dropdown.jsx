@@ -1,20 +1,17 @@
-import React, { useState } from "react";
+import React from "react";
 
-const Dropdown = () => {
-  // State to store selected value
-  const [selectedOption, setSelectedOption] = useState("");
-
+const Dropdown = ({ selectedModel, onModelChange }) => {
   // Handle dropdown change
   const handleChange = (event) => {
-    setSelectedOption(event.target.value);
+    onModelChange(event.target.value);
   };
 
   return (
 
     <div style={styles.container}>
-      <select value={selectedOption} onChange={handleChange} style={styles.dropdown}>
-        <option style = {styles.opt} value="option1">GPT 4-o</option>
-        <option style = {styles.opt} value="option2">GPT 4-o mini</option>
+      <select value={selectedModel} onChange={handleChange} style={styles.dropdown}>
+        <option style={styles.opt} value="gpt-4o-mini">GPT 4-o mini</option>
+        <option style={styles.opt} value="deepseek">DeepSeek</option>
       </select>
     </div>
   );

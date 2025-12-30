@@ -1,38 +1,9 @@
-# import time
-# from watchdog.observers import Observer
-# from watchdog.events import FileSystemEventHandler
-# import websockets
-# import asyncio
+"""
+WebSocket server that watches pipeline files and streams updates to clients.
 
-# class  MyHandler(FileSystemEventHandler):
-#     def  on_modified(self,  event):
-#         # print(f'event type: {event.event_type} path : {event.src_path}')
-#         event_data = {
-#         "type": "agents",
-#         "response": f'Event type: {event.event_type} path: {event.src_path}'
-#     }
-#         if(event.src_path == ".\ProcessLogs.md"):
-#             print(f'Pizza lelo')
-#             print(f'event type: {event.event_type} path : {event.src_path}')
-#             # self.websocket.send(json.dumps(event_data))
-#             # self.message_queue.put(event_data)
-#     def  on_created(self,  event):
-#         print(f'event type: {event.event_type} path : {event.src_path}')
-#     def  on_deleted(self,  event):
-#         print(f'event type: {event.event_type} path : {event.src_path}')
-
-# if __name__ ==  "__main__":
-#     event_handler = MyHandler()
-#     observer = Observer()
-#     observer.schedule(event_handler,  path='.',  recursive=False)
-#     observer.start()
-
-#     try:
-#         while  True:
-#             time.sleep(0.5)
-#     except  KeyboardInterrupt:
-#         observer.stop()
-#     observer.join()
+- ProcessLogs.md → plain appended logs
+- Results.csv     → structured table for results panel
+"""
 
 import os
 import time
@@ -40,104 +11,126 @@ import json
 import threading
 import asyncio
 import websockets
-
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 import queue
+from pathlib import Path
+import csv
 
+DEFAULT_PIPELINE_ROOT = Path(__file__).resolve().parents[1] / "3GPP-pipeline"
+PIPELINE_ROOT = Path(os.getenv("PIPELINE_ROOT", DEFAULT_PIPELINE_ROOT)).resolve()
 
 
 class MyHandler(FileSystemEventHandler):
-    def __init__(self, websocket, message_queue):
+    def __init__(self, message_queue):
         super().__init__()
-        self.websocket = websocket
-        self.message_queue = message_queue  # Queue to pass messages to the main async loop
+        self.message_queue = message_queue
+        self.log_offset = 0
+
+        self.watch_files = {
+            PIPELINE_ROOT / "ProcessLogs.md": "logs",
+            PIPELINE_ROOT / "Results.csv": "results"
+        }
 
     def on_modified(self, event):
-        # Generate event details
-        event_data = {
-            "type": "agents",
-            "response": f'Event type: {event.event_type} path: {event.src_path}'
-        }
-        print(f'event type: {event.event_type} path : {event.src_path}')
-        if(event.src_path == ".\ProcessLogs.md"):
-            print(f'Pizza lelo')
-            # self.websocket.send(json.dumps(event_data))
-            text = open("ProcessLogs.md", 'r').read()
-            event_data = {
-                "type": "agents",
-                "response": text
-            }
-            # with open("ProcessLogs.md", 'r') as f:
-            #     f.read()
-            self.message_queue.put(event_data)
+        self._handle_event(event.src_path)
 
-    def  on_created(self,  event):
-         print(f'event type: {event.event_type} path : {event.src_path}')
-    def  on_deleted(self,  event):
-         print(f'event type: {event.event_type} path : {event.src_path}')
+    def on_created(self, event):
+        self._handle_event(event.src_path)
+
+    def on_moved(self, event):
+        self._handle_event(event.dest_path)
+
+    def _handle_event(self, src_path):
+        resolved_path = Path(src_path).resolve()
+        if resolved_path not in self.watch_files:
+            return
+
+        file_type = self.watch_files[resolved_path]
+        if file_type == "logs":
+            self.handle_logs(resolved_path)
+        elif file_type == "results":
+            self.handle_results(resolved_path)
+
+    def handle_logs(self, path: Path):
+        try:
+            if path.stat().st_size < self.log_offset:
+                self.log_offset = 0
+
+            with open(path, "r") as f:
+                f.seek(self.log_offset)
+                new_content = f.read()
+                self.log_offset = f.tell()
+
+            if new_content.strip():
+                self.message_queue.put({
+                    "type": "logs",
+                    "response": new_content
+                })
+        except FileNotFoundError:
+            pass
+
+    def handle_results(self, path: Path):
+        try:
+            with open(path, "r") as f:
+                reader = csv.DictReader(f)
+                rows = list(reader)
+
+            self.message_queue.put({
+                "type": "results",
+                "format": "table",
+                "columns": reader.fieldnames,
+                "rows": rows
+            })
+        except FileNotFoundError:
+            pass
 
 
-async def handle_connection(websocket):
-    message_queue = queue.Queue()
-    async def process_events():
-        while True:
-            if not message_queue.empty():
-                print("Sending event data to client")
-                event_data = message_queue.get()
-                
-                # Schedule the send operation on the main event loop
-                asyncio.run_coroutine_threadsafe(
-                    websocket.send(json.dumps(event_data)),
-                    asyncio.get_event_loop()
-                )
-            await asyncio.sleep(0.5)  # Prevent busy-waiting
-
-    def run_process_events_in_thread():
-        # Run the asyncio loop for process_events in a new thread
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        loop.run_until_complete(process_events())
-    try:
-        observer_thread = threading.Thread(target=start_observer, args=(websocket, message_queue), daemon=True)
-        observer_thread.start()
-        # event_task = asyncio.create_task(process_events())
-        # events_thread = threading.Thread(target=run_process_events_in_thread, daemon=True)
-        # events_thread.start()
-        await process_events()
-    except websockets.exceptions.ConnectionClosed:
-        print("Client connection closed")
-    except Exception as e:
-        print(f"Error handling connection: {e}")
-    # finally:
-    #     # Cancel the event task if the WebSocket connection closes
-    #     event_task.cancel()
-    #     await event_task
-
-async def main():
-    print("WebSocket server starting on ws://0.0.0.0:8090")
-    async with websockets.serve(handle_connection, "0.0.0.0", 8090):
-        await asyncio.Future()  # run forever
-
-def start_observer(websocket, message_queue):
-    event_handler = MyHandler(websocket, message_queue)
+def start_observer(message_queue):
+    event_handler = MyHandler(message_queue)
     observer = Observer()
-    observer.schedule(event_handler,  path='.',  recursive=False)
+    observer.schedule(event_handler, path=str(PIPELINE_ROOT), recursive=False)
     observer.start()
 
     try:
-        while  True:
-            time.sleep(0.5)
-            # print("Running")
-    except  KeyboardInterrupt:
+        while True:
+            time.sleep(0.3)
+    except KeyboardInterrupt:
         observer.stop()
+
     observer.join()
 
 
+async def handle_connection(websocket):
+    print("Client connected")
+    message_queue = queue.Queue()
+
+    observer_thread = threading.Thread(
+        target=start_observer,
+        args=(message_queue,),
+        daemon=True
+    )
+    observer_thread.start()
+
+    try:
+        while True:
+            try:
+                event_data = message_queue.get_nowait()
+                await websocket.send(json.dumps(event_data))
+            except queue.Empty:
+                await asyncio.sleep(0.2)
+    except websockets.exceptions.ConnectionClosed:
+        print("Client disconnected")
+
+
+async def main():
+    print("WebSocket server running on ws://0.0.0.0:8090")
+    async with websockets.serve(handle_connection, "0.0.0.0", 8090):
+        await asyncio.Future()
 
 
 if __name__ == "__main__":
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
-        print("\nServer shutdown by user")
+        print("\nServer shutdown")

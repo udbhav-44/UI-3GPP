@@ -1,14 +1,22 @@
+import os
 import subprocess
 
-def convert_to_html(content):
+def convert_to_html(content, output_base="pathway", output_dir=None):
+    output_root = output_base
+    if output_dir:
+        output_root = os.path.join(output_dir, output_base)
+
+    md_path = f"{output_root}_report.md"
+    html_path = f"{output_root}.html"
+
     # Save content to a markdown file
-    with open('pathway_report.md', 'w') as file:
+    with open(md_path, 'w') as file:
         file.write(content)
 
     try:
         # Execute the command
         result = subprocess.run(
-            ['grip', 'pathway_report.md', '--export', 'pathway.html'],  # Command and arguments as a list
+            ['grip', md_path, '--export', html_path],  # Command and arguments as a list
             check=True,                                   # Raise an exception if the command fails
             capture_output=True,                          # Capture the command's output
             text=True                                     # Ensure output is in text format, not bytes
@@ -19,3 +27,5 @@ def convert_to_html(content):
         print(f"Error occurred: {e.stderr}")
     except FileNotFoundError:
         print("The 'grip' command was not found. Ensure it is installed and available in your PATH.")
+
+    return html_path

@@ -27,6 +27,7 @@
     /* transition: transform 1s ease-in-out; */
     overflow: hidden;
     transition: width 0.2s ease-in-out;
+    box-shadow: 8px 0 24px rgba(15, 23, 42, 0.15);
 }
 
 .sidebar .recent{
@@ -47,15 +48,15 @@
 .sidebar.extended{
     animation: openn 0.5s ease-in-out;
     width: 200px;
-    font-family: 'Montserrat', sans-serif;
-    color: #75d91f;
-    background: -webkit-linear-gradient(96deg,#131c2c,#292a28);
+    font-family: 'Sora', sans-serif;
+    color: #e2e8f0;
+    background: linear-gradient(160deg, #0f172a, #162033 60%, #0b1220);
 }
 
 .sidebar.collapsed{
     animation: close 0.5s ease-in-out;
     width: 120px;
-    background: -webkit-linear-gradient(96deg,#131c2c,#292a28);
+    background: linear-gradient(160deg, #0f172a, #162033 60%, #0b1220);
     /* background-color: white; */
 }
 
@@ -98,24 +99,59 @@
 .sidebar .recent-title{
     margin-top: 30px;
     margin-bottom: 20px;
-    color: #75d91f;
+    color: #94a3b8;
+    font-size: 0.85rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
 }
 .sidebar .recent-entry{
     display: flex;
-    align-items: start;
+    align-items: center;
     gap: 10px;
     padding: 10px;
     border-radius: 50px;
     cursor: pointer; 
 }
 
+.sidebar .recent-entry .thread-title {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.sidebar .recent-entry .thread-delete {
+    border: 1px solid rgba(226, 232, 240, 0.4);
+    background: transparent;
+    color: #e2e8f0;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 16px;
+    line-height: 1;
+    opacity: 0;
+    transition: opacity 0.2s ease;
+}
+
+.sidebar .recent-entry:hover .thread-delete {
+    opacity: 1;
+}
+
 .sidebar.extended .recent-entry{
-    color: #75d91f;
+    color: #e2e8f0;
 }
 
 .sidebar.extended .recent-entry:hover{
-    background-color: #75d91f;
-    color: #75d91f;
+    background-color: rgba(148, 163, 184, 0.15);
+    color: #ffffff;
+}
+
+.sidebar .recent-entry.active {
+    background-color: rgba(117, 217, 31, 0.2);
+    color: #ffffff;
 }
 
 .sidebar .bottom{
