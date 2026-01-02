@@ -145,10 +145,12 @@ const Main = ({ user }) => {
 	const textAreaRef = useRef(null);
 	const dropdownRef = useRef(null);
 	const buttonContainerRef = useRef(null);
+	const apiBaseUrl = getApiBaseUrl() || (typeof window !== "undefined" ? window.location.origin : "");
+	const wsBaseUrl = (import.meta.env.VITE_WS_BASE_URL || apiBaseUrl || "ws://localhost").replace(/^http/, "ws");
 
 	const generatePDF = () => {
 		// Send the raw Markdown content to the backend
-		fetch('http://172.26.189.83:5001/convert', {
+		fetch(`${apiBaseUrl}/convert`, {
 			method: 'POST',
 			headers: {
 				'Content-Type': 'application/json',
@@ -165,7 +167,7 @@ const Main = ({ user }) => {
 				console.log('Markdown content sent successfully to backend:', data.message);
 
 				// Now fetch the generated HTML from the backend after it's processed
-				return fetch('http://172.26.189.83:5001/download-pdf', {
+				return fetch(`${apiBaseUrl}/download-pdf`, {
 					method: 'GET',
 				});
 			})
@@ -314,7 +316,7 @@ const Main = ({ user }) => {
 		try {
 			const controller = new AbortController();
 			abortControllerRef.current = controller;
-			await fetch('http://172.26.189.83:5001/query', {
+			await fetch(`${apiBaseUrl}/query`, {
 				method: 'POST',
 				headers: {
 					'Content-Type': 'application/json',
@@ -379,7 +381,6 @@ const Main = ({ user }) => {
 			return;
 		}
 
-		const apiBaseUrl = getApiBaseUrl() || "http://172.26.189.83:5001";
 		const token = getToken();
 		const answerText = agent.current ? agentData : (markdownContent || resultData);
 
@@ -526,7 +527,7 @@ const Main = ({ user }) => {
 	useEffect(() => {
 
 		try {
-			const ws = new WebSocket('ws://172.26.189.83:8090');
+			const ws = new WebSocket(`${wsBaseUrl}/agent-ws`);
 
 			ws.onopen = () => {
 				console.log('WebSocket connected to agent server');
@@ -582,7 +583,7 @@ const Main = ({ user }) => {
 	}, []);
 
 	useEffect(() => {
-		const ws = new WebSocket('ws://172.26.189.83:8080');
+		const ws = new WebSocket(`${wsBaseUrl}/ws`);
 		try {
 			ws.onopen = () => {
 				console.log('WebSocket connected');

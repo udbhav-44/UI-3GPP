@@ -1,6 +1,8 @@
 import { getToken } from "./authToken";
 
-const uploadBaseUrl = import.meta.env.VITE_UPLOAD_BASE_URL || "http://172.26.189.83:8000";
+const fallbackBaseUrl =
+  typeof window !== "undefined" ? window.location.origin : "http://localhost:8000";
+const uploadBaseUrl = import.meta.env.VITE_UPLOAD_BASE_URL || fallbackBaseUrl;
 
 const buildAuthHeaders = () => {
   const token = getToken();
