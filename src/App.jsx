@@ -28,6 +28,8 @@ const App = () => {
     const oauthToken = params.get("token");
     if (oauthToken) {
       setToken(oauthToken);
+      sessionStorage.setItem("ui3gpp_force_new_chat", "1");
+      localStorage.removeItem("ui3gpp_active_thread");
       params.delete("token");
       params.delete("provider");
       const newQuery = params.toString();

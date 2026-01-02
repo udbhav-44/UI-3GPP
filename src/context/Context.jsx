@@ -130,9 +130,17 @@ const ContextProvider = (props) => {
 
 	const refreshThreads = async (selectedId) => {
 		try {
+			const forceNewChat = sessionStorage.getItem("ui3gpp_force_new_chat") === "1";
 			const data = await listChats();
 			const nextThreads = data.threads || [];
 			setThreads(nextThreads);
+			if (forceNewChat) {
+				sessionStorage.removeItem("ui3gpp_force_new_chat");
+				localStorage.removeItem("ui3gpp_active_thread");
+				newChat();
+				setChatHydrated(true);
+				return;
+			}
 			if (selectedId) {
 				const exists = nextThreads.find((thread) => String(thread.id) === String(selectedId));
 				if (exists) {

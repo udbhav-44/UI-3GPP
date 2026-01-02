@@ -66,6 +66,8 @@ const Login = ({ onAuthSuccess, checking = false }) => {
         password: form.password,
       });
       setToken(data.token);
+      sessionStorage.setItem("ui3gpp_force_new_chat", "1");
+      localStorage.removeItem("ui3gpp_active_thread");
       if (onAuthSuccess) {
         onAuthSuccess(data.user);
       }
@@ -92,6 +94,8 @@ const Login = ({ onAuthSuccess, checking = false }) => {
         password: form.password,
       });
       setToken(data.token);
+      sessionStorage.setItem("ui3gpp_force_new_chat", "1");
+      localStorage.removeItem("ui3gpp_active_thread");
       if (onAuthSuccess) {
         onAuthSuccess(data.user);
       }
@@ -162,7 +166,7 @@ const Login = ({ onAuthSuccess, checking = false }) => {
     <div className="login-page">
       <div className="login-shell">
         <section className="login-brand">
-          <span className="login-badge">3GPP Lab</span>
+          <span className="login-badge">Wisdom Lab IITK </span>
           <h1>Welcome back.</h1>
           <p>
             Secure your research workflows, manage long-running pipelines, and
@@ -170,11 +174,11 @@ const Login = ({ onAuthSuccess, checking = false }) => {
           </p>
           <div className="login-metrics">
             <div>
-              <span className="metric-number">42k</span>
+              <span className="metric-number">12k</span>
               <span className="metric-label">Spec pages indexed</span>
             </div>
             <div>
-              <span className="metric-number">2.1s</span>
+              <span className="metric-number">20.1s</span>
               <span className="metric-label">Average query latency</span>
             </div>
           </div>
@@ -197,7 +201,7 @@ const Login = ({ onAuthSuccess, checking = false }) => {
                 ? "We will email you a reset link."
                 : mode === "reset"
                 ? "Use your reset link to pick a new password."
-                : "Use your lab credentials to continue."}
+                : "Use your IITK credentials to continue."}
             </p>
           </div>
 
@@ -239,7 +243,7 @@ const Login = ({ onAuthSuccess, checking = false }) => {
                 <input
                   type="email"
                   name="email"
-                  placeholder="you@3gpp-lab.org"
+                  placeholder="cc-id@iitk.ac.in"
                   autoComplete="email"
                   value={form.email}
                   onChange={handleFieldChange}
@@ -295,7 +299,7 @@ const Login = ({ onAuthSuccess, checking = false }) => {
                 <input
                   type="email"
                   name="email"
-                  placeholder="you@3gpp-lab.org"
+                  placeholder="cc-id@iitk.ac.in"
                   value={form.email}
                   onChange={handleFieldChange}
                   required
@@ -339,7 +343,7 @@ const Login = ({ onAuthSuccess, checking = false }) => {
                 <input
                   type="email"
                   name="email"
-                  placeholder="you@3gpp-lab.org"
+                  placeholder="cc-id@iitk.ac.in"
                   value={form.email}
                   onChange={handleFieldChange}
                   required
@@ -367,7 +371,7 @@ const Login = ({ onAuthSuccess, checking = false }) => {
                 <input
                   type="email"
                   name="email"
-                  placeholder="you@3gpp-lab.org"
+                  placeholder="cc-id@iitk.ac.in"
                   value={form.email}
                   onChange={handleFieldChange}
                   required
