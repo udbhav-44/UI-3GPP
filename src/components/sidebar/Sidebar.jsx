@@ -1,6 +1,7 @@
 import "./sidebar.css";
 import { assets } from "../../assets/assets";
 import { useContext, useState } from "react";
+import { FaCheckCircle, FaExclamationTriangle, FaTimes } from "react-icons/fa";
 import { Context } from "../../context/Context";
 import Viewer from "../file/fileSystem";
 
@@ -9,87 +10,111 @@ const Sidebar = ({ onLogout }) => {
 
   const {
     threads,
+    fileHistory,
     activeThreadId,
     selectThread,
     newChat,
     deleteThread,
-    socket,
-    setIsUpload,
-    isUpload
+    uploadNotice,
+    pushUploadNotice
   } = useContext(Context);
 
-  const [isPopupVisible, setPopupVisible] = useState(false);
   const [isFilePopupVisible, setFilePopupVisible] = useState(false);
-
-  const [formData, setFormData] = useState({
-    GEMINI_API_KEY_30: "",
-    OPEN_AI_API_KEY_30: "",
-    TAVILY_API_KEY_30: "",
-    VOYAGE_API_KEY: ""
-  });
 
   // -------------------------
   // Popup controls
   // -------------------------
   const closePopup = () => {
-    setPopupVisible(false);
     setFilePopupVisible(false);
-    setIsUpload(false);
   };
 
-  const openPopup = () => setPopupVisible(true);
   const openFilePopup = () => setFilePopupVisible(true);
-
-  // -------------------------
-  // Credentials form
-  // -------------------------
-  const handleChange = (e) => {
-    const { name, value } = e.target;
-    setFormData(prev => ({ ...prev, [name]: value }));
-  };
-
-  const handleSubmit = (e) => {
-    e.preventDefault();
-    if (socket && socket.readyState === WebSocket.OPEN) {
-      socket.send(JSON.stringify({ type: "cred", formData }));
-    }
-    closePopup();
-  };
 
   return (
     <>
       <div className={`sidebar ${extended ? "extended" : "collapsed"}`}>
-        {/* ---------------- TOP ---------------- */}
-        <div className="top">
-          <div className="buttons">
-            <img
-              src={assets.menu_icon}
-              className="menu"
+        <div className="sidebar-top">
+          <div className="sidebar-header">
+            <button
+              type="button"
+              className="icon-button ghost"
               title="Toggle Sidebar"
-              onClick={() => setExtended(p => !p)}
-            />
-            <img
-              src={assets.edit_icon}
-              className="new"
+              onClick={() => setExtended((p) => !p)}
+            >
+              <img src={assets.menu_icon} alt="" />
+            </button>
+            <div className="brand">
+              <div className="brand-logo">
+                <img src={assets.main_logo} alt="3GPP" />
+              </div>
+              {extended && (
+                <div className="brand-text">
+                  <span>3GPP</span>
+                  <small>Research Console</small>
+                </div>
+              )}
+            </div>
+          </div>
+          <div className="sidebar-actions">
+            <button
+              type="button"
+              className="primary-action"
               title="New Chat"
               onClick={newChat}
-            />
+            >
+              <img src={assets.edit_icon} alt="" />
+              {extended && <span>New chat</span>}
+            </button>
+            {extended && (
+              <div className="sidebar-metrics">
+                <div className="metric-card">
+                  <span>Threads</span>
+                  <strong>{threads.length}</strong>
+                </div>
+                <div className="metric-card">
+                  <span>Files</span>
+                  <strong>{fileHistory.length}</strong>
+                </div>
+              </div>
+            )}
           </div>
         </div>
 
         {/* ---------------- RECENT ---------------- */}
         <div className="recent">
-          <p className="recent-title">Recent</p>
+          <div className="recent-header">
+            <p className="recent-title">Recent</p>
+            {extended && <span className="recent-count">{threads.length}</span>}
+          </div>
+          {threads.length === 0 && (
+            <div className="recent-empty">
+              <p>No chats yet.</p>
+              {extended && (
+                <button type="button" onClick={newChat}>
+                  Start a new chat
+                </button>
+              )}
+            </div>
+          )}
           {threads.map((thread) => (
             <div
               key={thread.id}
               className={`recent-entry ${String(activeThreadId) === String(thread.id) ? "active" : ""}`}
               onClick={() => selectThread(thread.id)}
             >
-              <img src={assets.message_icon} alt="" />
-              <p className="thread-title">
-                {(thread.title || thread.last_message || "New chat").slice(0, 20)}...
-              </p>
+              <div className="thread-icon">
+                <img src={assets.message_icon} alt="" />
+              </div>
+              <div className="thread-body">
+                <p className="thread-title">
+                  {(thread.title || thread.last_message || "New chat").slice(0, 28)}
+                </p>
+                {extended && (
+                  <span className="thread-meta">
+                    {thread.updated_at ? new Date(thread.updated_at).toLocaleDateString() : "Just now"}
+                  </span>
+                )}
+              </div>
               {extended && (
                 <button
                   type="button"
@@ -110,66 +135,35 @@ const Sidebar = ({ onLogout }) => {
 
         {/* ---------------- BOTTOM ---------------- */}
         <div className="bottom">
-          <div className="bottom-item recent-entry" onClick={openFilePopup}>
-            <img src={assets.history_icon} alt="" title="Files" />
-            {extended && <p>Files</p>}
-          </div>
+          <button type="button" className="bottom-item" onClick={openFilePopup}>
+            <span className="bottom-icon">
+              <img src={assets.history_icon} alt="" />
+            </span>
+            {extended && (
+              <span className="bottom-text">
+                Files
+                <small>Manage uploads</small>
+              </span>
+            )}
+          </button>
 
-          <div className="bottom-item recent-entry" onClick={openPopup}>
-            <img src={assets.setting_icon} alt="" title="Credentials" />
-            {extended && <p>Credentials</p>}
-          </div>
-
-          <div
-            className="bottom-item recent-entry"
+          <button
+            type="button"
+            className="bottom-item"
             onClick={() => onLogout && onLogout()}
           >
-            <img src={assets.user_icon} alt="" title="Logout" />
-            {extended && <p>Logout</p>}
-          </div>
+            <span className="bottom-icon avatar">
+              <img src={assets.user} alt="" />
+            </span>
+            {extended && (
+              <span className="bottom-text">
+                Logout
+                <small>End session</small>
+              </span>
+            )}
+          </button>
         </div>
       </div>
-
-      {/* ---------------- CREDENTIALS POPUP ---------------- */}
-      {isPopupVisible && (
-        <div className="popup">
-          <div className="popup-overlay" onClick={closePopup}></div>
-          <div className="popup-form">
-            <h2>Credentials</h2>
-            <form className="custom-form" onSubmit={handleSubmit}>
-              <label>OpenAI API Key</label>
-              <input
-                name="OPEN_AI_API_KEY_30"
-                value={formData.OPEN_AI_API_KEY_30}
-                onChange={handleChange}
-              />
-
-              <label>Gemini API Key</label>
-              <input
-                name="GEMINI_API_KEY_30"
-                value={formData.GEMINI_API_KEY_30}
-                onChange={handleChange}
-              />
-
-              <label>Tavily API Key</label>
-              <input
-                name="TAVILY_API_KEY_30"
-                value={formData.TAVILY_API_KEY_30}
-                onChange={handleChange}
-              />
-
-              <label>Voyage API Key</label>
-              <input
-                name="VOYAGE_API_KEY"
-                value={formData.VOYAGE_API_KEY}
-                onChange={handleChange}
-              />
-
-              <button type="submit">Submit</button>
-            </form>
-          </div>
-        </div>
-      )}
 
       {/* ---------------- FILE VIEWER ---------------- */}
       {isFilePopupVisible && (
@@ -181,13 +175,26 @@ const Sidebar = ({ onLogout }) => {
         </div>
       )}
 
-      {/* ---------------- UPLOAD SUCCESS ---------------- */}
-      {isUpload && (
-        <div className="popup">
-          <div className="popup-overlay" onClick={closePopup}></div>
-          <div className="popup-form">
-            <h2>File Uploaded Successfully</h2>
+      {uploadNotice && (
+        <div className={`upload-toast ${uploadNotice.type || "info"}`}>
+          <div className="upload-toast__icon" aria-hidden="true">
+            {uploadNotice.type === "success" && <FaCheckCircle />}
+            {uploadNotice.type === "warning" && <FaExclamationTriangle />}
+            {uploadNotice.type === "error" && <FaExclamationTriangle />}
+            {!uploadNotice.type && <FaCheckCircle />}
           </div>
+          <div className="upload-toast__content">
+            <p className="upload-toast__title">{uploadNotice.title || "Upload update"}</p>
+            <p className="upload-toast__message">{uploadNotice.message}</p>
+          </div>
+          <button
+            type="button"
+            className="upload-toast__close"
+            onClick={() => pushUploadNotice(null)}
+            aria-label="Dismiss notification"
+          >
+            <FaTimes />
+          </button>
         </div>
       )}
     </>

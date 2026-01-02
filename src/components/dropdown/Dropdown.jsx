@@ -1,17 +1,32 @@
 import React from "react";
 
-const Dropdown = ({ selectedModel, onModelChange }) => {
-  // Handle dropdown change
-  const handleChange = (event) => {
+const Dropdown = ({
+  selectedProvider,
+  selectedModel,
+  onProviderChange,
+  onModelChange,
+  modelOptions,
+}) => {
+  const handleProviderChange = (event) => {
+    onProviderChange(event.target.value);
+  };
+
+  const handleModelChange = (event) => {
     onModelChange(event.target.value);
   };
 
   return (
-
     <div style={styles.container}>
-      <select value={selectedModel} onChange={handleChange} style={styles.dropdown}>
-        <option style={styles.opt} value="gpt-4o-mini">GPT 4-o mini</option>
+      <select value={selectedProvider} onChange={handleProviderChange} style={styles.dropdown}>
+        <option style={styles.opt} value="openai">OpenAI</option>
         <option style={styles.opt} value="deepseek">DeepSeek</option>
+      </select>
+      <select value={selectedModel} onChange={handleModelChange} style={styles.dropdown}>
+        {(modelOptions[selectedProvider] || []).map((model) => (
+          <option key={model} style={styles.opt} value={model}>
+            {model}
+          </option>
+        ))}
       </select>
     </div>
   );
@@ -24,6 +39,10 @@ const styles = {
     margin: "10px",
     // backgroundColor: "#f9f9f9",
     maxWidth: "1200px",
+    minWidth: "220px",
+    display: "flex",
+    alignItems: "center",
+    gap: "10px",
   },
 
   header: {
@@ -33,7 +52,7 @@ const styles = {
   dropdown: {
     padding: "10px",
     fontSize: "16px",
-    width: "100%",
+    width: "180px",
     borderRadius: "5px",
     border: "1px solid #ddd",
     outline: "none",

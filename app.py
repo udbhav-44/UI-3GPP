@@ -33,6 +33,11 @@ AUTH_TOKEN_IN_URL = os.getenv("AUTH_TOKEN_IN_URL", "true").lower() == "true"
 AUTH_REQUIRE_TOKEN = os.getenv("AUTH_REQUIRE_TOKEN", "false").lower() == "true"
 REPORTS_DIR = os.getenv("REPORTS_DIR") or BASE_DIR
 FEEDBACK_LOG_PATH = os.getenv("FEEDBACK_LOG_PATH", os.path.join(BASE_DIR, "feedback_log.jsonl"))
+WRITE_UI_ARTIFACTS = os.getenv("WRITE_UI_ARTIFACTS", os.getenv("WRITE_ARTIFACTS", "false")).lower() in {
+    "1",
+    "true",
+    "yes",
+}
 
 SMTP_HOST = os.getenv("SMTP_HOST")
 SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
@@ -658,6 +663,8 @@ def handle_query():
 def convert_to_pdf():
     if AUTH_REQUIRE_TOKEN and not require_auth():
         return {"error": "Unauthorized"}, 401
+    if not WRITE_UI_ARTIFACTS:
+        return {"error": "Report generation is disabled."}, 503
     data = request.get_json()
     markdown_content = data.get('content', '')
     request_id = data.get("request_id")
@@ -675,6 +682,8 @@ def convert_to_pdf():
 def download_pdf():
     if AUTH_REQUIRE_TOKEN and not require_auth():
         return {"error": "Unauthorized"}, 401
+    if not WRITE_UI_ARTIFACTS:
+        return {"error": "Report downloads are disabled."}, 503
     request_id = request.args.get("request_id")
     output_base = f"pathway_{request_id}" if request_id else "pathway"
     output_file = os.path.join(REPORTS_DIR, f"{output_base}.html")
@@ -713,6 +722,8 @@ def submit_feedback():
         "authenticated": bool(token_user),
     }
 
+    if not WRITE_UI_ARTIFACTS:
+        return jsonify({"status": "skipped"}), 201
     try:
         log_dir = os.path.dirname(FEEDBACK_LOG_PATH)
         if log_dir:

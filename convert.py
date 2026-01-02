@@ -2,6 +2,13 @@ import os
 import subprocess
 
 def convert_to_html(content, output_base="pathway", output_dir=None):
+    write_artifacts = os.getenv("WRITE_UI_ARTIFACTS", os.getenv("WRITE_ARTIFACTS", "false")).lower() in {
+        "1",
+        "true",
+        "yes",
+    }
+    if not write_artifacts:
+        return ""
     output_root = output_base
     if output_dir:
         output_root = os.path.join(output_dir, output_base)

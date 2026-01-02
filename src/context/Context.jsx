@@ -21,12 +21,13 @@ const ContextProvider = (props) => {
 	const displayedCharsRef = useRef(0); // Use a ref to track displayed characters count
 	const totalCharsRef = useRef(0); // Use a ref for total characters
 	const [fileHistory, setFileHistory] = useState([]);		// State to store the file history
-	const [isUpload, setIsUpload] = useState(false);		// State to check if the user is uploading a file
+	const [uploadNotice, setUploadNotice] = useState(null);
 	const [totalDisplayedCharsRef, setTotalDisplayedCharsRef] = useState(0); // State to track total displayed chars
 	const [prevResults, setPrevResults] = useState([]);
 	const pendingDataRef = useRef([]);
 	const resp = useRef(false);
 	const renderTokenRef = useRef(0);
+	const uploadNoticeTimerRef = useRef(null);
 	const [resultsTable, setResultsTable] = useState({
     columns: [],
     rows: []
@@ -230,6 +231,28 @@ const ContextProvider = (props) => {
 		refreshThreads();
 	}, []);
 
+	useEffect(() => {
+		return () => {
+			if (uploadNoticeTimerRef.current) {
+				clearTimeout(uploadNoticeTimerRef.current);
+			}
+		};
+	}, []);
+
+	const pushUploadNotice = (notice) => {
+		if (uploadNoticeTimerRef.current) {
+			clearTimeout(uploadNoticeTimerRef.current);
+		}
+		if (!notice) {
+			setUploadNotice(null);
+			return;
+		}
+		setUploadNotice({ id: Date.now(), ...notice });
+		uploadNoticeTimerRef.current = setTimeout(() => {
+			setUploadNotice(null);
+		}, 2600);
+	};
+
 	const renderBatch = () => {
 		const newChunk = pendingDataRef.current.shift(); // Get the next chunk
 		if (!newChunk) return;
@@ -384,8 +407,8 @@ const ContextProvider = (props) => {
 		fileHistory,
 		setFileHistory,
 		resp,
-		isUpload,
-		setIsUpload,
+		uploadNotice,
+		pushUploadNotice,
 		totalDisplayedCharsRef,
 		setTotalDisplayedCharsRef,
 		resultsTable,

@@ -8,8 +8,10 @@ import { TypeAnimation } from 'react-type-animation';
 import ReactMarkdown from "react-markdown";
 import rehypeRaw from "rehype-raw";
 import remarkGfm from "remark-gfm";
+import { FaCloudUploadAlt, FaGoogleDrive } from "react-icons/fa";
 import { getApiBaseUrl } from "../../services/auth";
 import { getToken } from "../../services/authToken";
+import { listUploads, uploadFiles } from "../../services/uploads";
 
 const Main = ({ user }) => {
 	const {
@@ -43,11 +45,9 @@ const Main = ({ user }) => {
 		setResultsUpdatedAt,
 		chatNo,
 		setChatNo,
-		fileHistory,
 		setFileHistory,
 		resp,
-		isUpload,
-		setIsUpload,
+		pushUploadNotice,
 		activeThreadId,
 		chatMessages,
 		createThread,
@@ -67,7 +67,8 @@ const Main = ({ user }) => {
 
 	const [markdownContent, setMarkdownContent] = useState('');
 	const [reccQs, setReccQs] = useState([])
-	const [isChecked, setIsChecked] = useState(false);
+	const [isDocsEnabled, setIsDocsEnabled] = useState(false);
+	const [isWebToolsEnabled, setIsWebToolsEnabled] = useState(false);
 	const [isDropdownOpen, setIsDropdownOpen] = useState(false);
 	const [mainWsStatus, setMainWsStatus] = useState("disconnected");
 	const [agentWsStatus, setAgentWsStatus] = useState("disconnected");
@@ -75,19 +76,31 @@ const Main = ({ user }) => {
 	const [feedbackStatus, setFeedbackStatus] = useState("idle");
 	const responseIdRef = useRef(null);
 	const [isProcessing, setIsProcessing] = useState(false);
-	const [selectedModel, setSelectedModel] = useState("gpt-4o-mini");
+	const MODEL_OPTIONS = {
+		openai: [
+			"gpt-4o-mini",
+			"gpt-4o",
+			"gpt-4.1",
+			"gpt-4.1-mini",
+			"gpt-4.1-nano",
+		],
+		deepseek: [
+			"deepseek-chat",
+			"deepseek-reasoner",
+		],
+	};
 
-	const ToggleSwitch = ({ label }) => {
+	const [selectedProvider, setSelectedProvider] = useState("openai");
+	const [selectedModel, setSelectedModel] = useState(MODEL_OPTIONS.openai[0]);
 
-		const handleToggle = () => {
-			// isChecked.current = !isChecked.current; // Toggle the checkbox state
-			setIsChecked(!isChecked);
-			let query = !isChecked
-			if (socket && socket.readyState === WebSocket.OPEN) {
-				socket.send(JSON.stringify({ type: 'toggleRag', query }));
-			}
-		};
+	useEffect(() => {
+		const options = MODEL_OPTIONS[selectedProvider] || [];
+		if (!options.includes(selectedModel)) {
+			setSelectedModel(options[0] || "");
+		}
+	}, [selectedProvider]);
 
+	const ToggleSwitch = ({ label, checked, onToggle }) => {
 		return (
 			<div className="container">
 				{label}{" "}
@@ -97,8 +110,8 @@ const Main = ({ user }) => {
 						className="checkbox"
 						name={label}
 						id={label}
-						checked={isChecked} // Control checkbox based on state
-						onChange={handleToggle} // Call handleToggle on checkbox change
+						checked={checked}
+						onChange={onToggle}
 					/>
 					<label className="label" htmlFor={label}>
 						<span className="inner" />
@@ -111,6 +124,22 @@ const Main = ({ user }) => {
 
 	const handleMarkdownChange = (e) => {
 		setMarkdownContent(e.target.value);
+	};
+
+	const handleDocsToggle = () => {
+		const next = !isDocsEnabled;
+		setIsDocsEnabled(next);
+		if (socket && socket.readyState === WebSocket.OPEN) {
+			socket.send(JSON.stringify({ type: 'toggleRag', query: next }));
+		}
+	};
+
+	const handleWebToolsToggle = () => {
+		const next = !isWebToolsEnabled;
+		setIsWebToolsEnabled(next);
+		if (socket && socket.readyState === WebSocket.OPEN) {
+			socket.send(JSON.stringify({ type: 'toggleWebTools', query: next }));
+		}
 	};
 
 	const textAreaRef = useRef(null);
@@ -270,8 +299,18 @@ const Main = ({ user }) => {
 
 		let query = trimmedInput;
 		if (socket && socket.readyState === WebSocket.OPEN) {
-			socket.send(JSON.stringify({ type: 'query', query, thread_id: threadId, history: historySnapshot, response_id: responseIdRef.current, model: selectedModel }));
-		}
+				socket.send(JSON.stringify({
+					type: 'query',
+					query,
+					thread_id: threadId,
+					history: historySnapshot,
+					response_id: responseIdRef.current,
+					model: selectedModel,
+					provider: selectedProvider,
+					web_tools: isWebToolsEnabled,
+					user_id: user?.id || user?.email || null,
+				}));
+			}
 		try {
 			const controller = new AbortController();
 			abortControllerRef.current = controller;
@@ -398,52 +437,53 @@ const Main = ({ user }) => {
 
 	const handleFileChange = async (event) => {
 		const files = event.target.files;
-		await setEvenData(event);
+		setEvenData(event);
 
-		if (files.length > 0) {
-			const formData = new FormData();
+		if (files && files.length > 0) {
+			try {
+				const results = await uploadFiles(files);
+				const successCount = results.filter((entry) => entry.ok).length;
+				const failCount = results.length - successCount;
 
-			// Append each selected file to the FormData object
-			for (let i = 0; i < files.length; i++) {
-				formData.append('file', files[i]);
-
-				// Update fileHistory state by adding new file info
-				setFileHistory((prevFileHistory) => [
-					...prevFileHistory,
-					{
-						fileName: files[i].name,
-						fileSize: files[i].size,
-						fileType: files[i].type,
-						timestamp: new Date().toLocaleString(),
-					},
-				]);
-
-				try {
-					// Send a POST request
-					const response = await fetch('http://172.26.189.83:8000/upload', {
-						method: 'POST',
-						body: formData,
-					});
-
-					if (response.ok) {
-						const result = await response.json();
-						console.log('Files uploaded successfully:', result);
-						setIsUpload(true);
-						setTimeout(() => {
-							setIsUpload(false);
-						}, 1000);
-						// Update file history after successful upload
-
-
-					} else {
-						console.error('Error uploading files:', response.statusText);
+				if (successCount > 0) {
+					try {
+						const uploaded = await listUploads();
+						setFileHistory(uploaded);
+					} catch (error) {
+						console.error("Failed to refresh uploads:", error);
 					}
-				} catch (error) {
-					console.error('Error during upload:', error);
 				}
+
+				if (successCount > 0 && failCount === 0) {
+					pushUploadNotice({
+						type: "success",
+						title: "Upload complete",
+						message: `${successCount} file${successCount === 1 ? "" : "s"} added.`,
+					});
+				} else if (successCount > 0) {
+					pushUploadNotice({
+						type: "warning",
+						title: "Partial upload",
+						message: `${successCount} succeeded, ${failCount} failed.`,
+					});
+				} else {
+					pushUploadNotice({
+						type: "error",
+						title: "Upload failed",
+						message: "We could not upload those files. Try again.",
+					});
+				}
+			} catch (error) {
+				console.error("Error during upload:", error);
+				pushUploadNotice({
+					type: "error",
+					title: "Upload failed",
+					message: "We could not upload those files. Try again.",
+				});
 			}
 		};
-		setIsDropdownOpen(false)
+		setIsDropdownOpen(false);
+		event.target.value = "";
 	}
 
 	const triggerFileInput = () => {
@@ -610,8 +650,15 @@ const Main = ({ user }) => {
 						<span className={`status-pill ${mainWsStatus}`}>Main WS</span>
 						<span className={`status-pill ${agentWsStatus}`}>Agent WS</span>
 					</div>
-					<Dropdown selectedModel={selectedModel} onModelChange={setSelectedModel} />
-					<ToggleSwitch label={"Docs"} />
+					<Dropdown
+						selectedProvider={selectedProvider}
+						selectedModel={selectedModel}
+						onProviderChange={setSelectedProvider}
+						onModelChange={setSelectedModel}
+						modelOptions={MODEL_OPTIONS}
+					/>
+					<ToggleSwitch label={"Docs"} checked={isDocsEnabled} onToggle={handleDocsToggle} />
+					<ToggleSwitch label={"Web"} checked={isWebToolsEnabled} onToggle={handleWebToolsToggle} />
 					<div className="user-meta">
 						<p className="user-name">{shortName}</p>
 						{displayEmail && <p className="user-email">{displayEmail}</p>}
@@ -731,12 +778,21 @@ const Main = ({ user }) => {
 								{(loading || resultData || agentData) && (
 									<div className="chat-row assistant">
 										<img src={assets.pway_icon} className="chat-avatar" alt="" />
-										<div className="chat-bubble assistant">
+										<div className={`chat-bubble assistant ${loading ? "loading" : ""}`}>
 											{loading ? (
-												<div className="loader">
-													<hr />
-													<hr />
-													<hr />
+												<div className="assistant-loading">
+													<div className="assistant-loading__header">
+														<span className="assistant-loading__badge">Processing</span>
+														<div className="assistant-loading__dots" aria-hidden="true">
+															<span />
+															<span />
+															<span />
+														</div>
+													</div>
+													<div className="assistant-loading__lines">
+														<span className="assistant-loading__line line-lg" />
+														<span className="assistant-loading__line line-md" />
+													</div>
 												</div>
 											) : (
 												<ReactMarkdown
@@ -931,26 +987,49 @@ const Main = ({ user }) => {
 
 						{/* Dropdown Content */}
 						<div
-							id="dropdown"
 							ref={dropdownRef}
-							className="dropdown-content"
+							className="upload-menu"
 						>
-							<div>
-								<button onClick={triggerFileInput}>Upload from Computer</button>
-								<input
-									multiple
-									id="hiddenFileInput"
-									type="file"
-									style={{ display: "none" }}
-									onChange={handleFileChange}
-								/>
+							<div className="upload-menu__header">
+								<p>Upload sources</p>
+								<span>PDF, DOCX, TXT, images</span>
 							</div>
+							<button
+								type="button"
+								className="upload-menu__item"
+								onClick={triggerFileInput}
+							>
+								<span className="upload-menu__icon">
+									<FaCloudUploadAlt />
+								</span>
+								<span className="upload-menu__text">
+									<span>From computer</span>
+									<small>Fast local upload</small>
+								</span>
+								<span className="upload-menu__badge">Local</span>
+							</button>
+							<input
+								multiple
+								id="hiddenFileInput"
+								type="file"
+								style={{ display: "none" }}
+								onChange={handleFileChange}
+							/>
 							<a
 								href="https://drive.google.com/drive/folders/1bmB1oKZ3J8_Onbd-pQKbhiBDLi8AGls9"
 								target="_blank"
 								rel="noopener noreferrer"
+								className="upload-menu__item link"
+								onClick={closeDropdown}
 							>
-								<button onClick={closeDropdown}>Upload to Google Drive</button>
+								<span className="upload-menu__icon">
+									<FaGoogleDrive />
+								</span>
+								<span className="upload-menu__text">
+									<span>Google Drive</span>
+									<small>Send docs to the shared folder</small>
+								</span>
+								<span className="upload-menu__badge">Cloud</span>
 							</a>
 						</div>
 					</>
