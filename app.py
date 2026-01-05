@@ -26,7 +26,7 @@ CHAT_DB_PATH = os.getenv("CHAT_DB_PATH", AUTH_DB_PATH)
 JWT_SECRET = os.getenv("JWT_SECRET", "change-me")
 JWT_ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
 JWT_EXP_MINUTES = int(os.getenv("JWT_EXP_MINUTES", "10080"))
-FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:5173")
+FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:6666")
 RESET_URL_BASE = os.getenv("RESET_URL_BASE", FRONTEND_URL)
 AUTH_DEV_MODE = os.getenv("AUTH_DEV_MODE", "false").lower() == "true"
 AUTH_TOKEN_IN_URL = os.getenv("AUTH_TOKEN_IN_URL", "true").lower() == "true"
@@ -712,6 +712,7 @@ def submit_feedback():
     entry = {
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "rating": rating,
+        "comment": data.get("comment", ""),
         "prompt": data.get("prompt", ""),
         "answer": data.get("answer", ""),
         "source": data.get("source", ""),

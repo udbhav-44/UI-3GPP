@@ -2,7 +2,7 @@ import { useContext } from "react";
 import { assets } from "../../assets/assets";
 import "./main.css";
 import { Context } from "../../context/Context";
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useMemo } from "react";
 import Dropdown from "../dropdown/Dropdown";
 import { TypeAnimation } from 'react-type-animation';
 import ReactMarkdown from "react-markdown";
@@ -74,6 +74,7 @@ const Main = ({ user }) => {
 	const [agentWsStatus, setAgentWsStatus] = useState("disconnected");
 	const [feedbackChoice, setFeedbackChoice] = useState(null);
 	const [feedbackStatus, setFeedbackStatus] = useState("idle");
+	const [feedbackComment, setFeedbackComment] = useState("");
 	const responseIdRef = useRef(null);
 	const [isProcessing, setIsProcessing] = useState(false);
 	const MODEL_OPTIONS = {
@@ -252,6 +253,26 @@ const Main = ({ user }) => {
 	const displayName = user?.name || user?.email || "Researcher";
 	const shortName = displayName.split(" ")[0];
 	const displayEmail = user?.email || "";
+	const recommendedQuestions = reccQs.filter((question) => Boolean(question));
+	const hasRecommendations = recommendedQuestions.length > 0;
+	const lastAssistantMessage = useMemo(() => {
+		for (let i = chatMessages.length - 1; i >= 0; i -= 1) {
+			const role = (chatMessages[i]?.role || "assistant").toLowerCase();
+			if (role === "assistant") {
+				return chatMessages[i];
+			}
+		}
+		return null;
+	}, [chatMessages]);
+	const feedbackAnswerText =
+		(agent.current ? agentData : (markdownContent || resultData)) ||
+		lastAssistantMessage?.content ||
+		"";
+	const feedbackSource =
+		(agent.current && (agentData || markdownContent || resultData))
+			? "agent"
+			: (lastAssistantMessage?.source || "main");
+	const canShowFeedback = showResults && !loading && Boolean(feedbackAnswerText);
 
 	const handleClick = async () => {
 		const trimmedInput = input.trim();
@@ -280,8 +301,10 @@ const Main = ({ user }) => {
 		setShowResults(true);
 		setLoading(true);
 		setDownloadData(false);
+		setReccQs([]);
 		setFeedbackChoice(null);
 		setFeedbackStatus("idle");
+		setFeedbackComment("");
 		responseIdRef.current = `resp_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 		resp.current = true;
 		setRecentPrompt(trimmedInput);
@@ -376,15 +399,22 @@ const Main = ({ user }) => {
 		abortControllerRef.current = null;
 	}, [downloadData]);
 
-	const handleFeedback = async (rating) => {
-		if (!downloadData || feedbackStatus === "sending") {
+	const handleFeedback = (rating) => {
+		if (!canShowFeedback || feedbackStatus === "sending") {
+			return;
+		}
+		setFeedbackChoice(rating);
+		setFeedbackStatus("idle");
+	};
+
+	const handleFeedbackSubmit = async () => {
+		if (!canShowFeedback || feedbackStatus === "sending" || !feedbackChoice) {
 			return;
 		}
 
 		const token = getToken();
-		const answerText = agent.current ? agentData : (markdownContent || resultData);
+		const answerText = feedbackAnswerText;
 
-		setFeedbackChoice(rating);
 		setFeedbackStatus("sending");
 
 		try {
@@ -395,10 +425,11 @@ const Main = ({ user }) => {
 					...(token ? { Authorization: `Bearer ${token}` } : {}),
 				},
 				body: JSON.stringify({
-					rating,
+					rating: feedbackChoice,
+					comment: feedbackComment.trim(),
 					prompt: recentPrompt,
 					answer: answerText,
-					source: agent.current ? "agent" : "main",
+					source: feedbackSource,
 					response_id: responseIdRef.current,
 					user: {
 						name: user?.name || "",
@@ -638,33 +669,39 @@ const Main = ({ user }) => {
 
 	return (
 
-		<div className="main" tabIndex="0" onKeyDown={(e) => {
+		<div
+			className={`main ${showResults ? "main--results" : "main--home"}`}
+			tabIndex="0"
+			onKeyDown={(e) => {
 			if (e.key === 'Enter' && !isProcessingRef.current) {
 				e.preventDefault();
 				handleClick();
 			}
-		}}>
+		}}
+		>
 			<div className="nav">
-				<img src={assets.main_logo} className="pway" alt="" />
-				<div className="rightside">
-					<div className="status-stack">
-						<span className={`status-pill ${mainWsStatus}`}>Main WS</span>
-						<span className={`status-pill ${agentWsStatus}`}>Agent WS</span>
+				<div className="nav-inner">
+					<img src={assets.main_logo} className="pway" alt="" />
+					<div className="rightside">
+						<div className="status-stack">
+							<span className={`status-pill ${mainWsStatus}`}>Main WS</span>
+							<span className={`status-pill ${agentWsStatus}`}>Agent WS</span>
+						</div>
+						<Dropdown
+							selectedProvider={selectedProvider}
+							selectedModel={selectedModel}
+							onProviderChange={setSelectedProvider}
+							onModelChange={setSelectedModel}
+							modelOptions={MODEL_OPTIONS}
+						/>
+						<ToggleSwitch label={"Docs"} checked={isDocsEnabled} onToggle={handleDocsToggle} />
+						<ToggleSwitch label={"Web"} checked={isWebToolsEnabled} onToggle={handleWebToolsToggle} />
+						<div className="user-meta">
+							<p className="user-name">{shortName}</p>
+							{displayEmail && <p className="user-email">{displayEmail}</p>}
+						</div>
+						<img src={assets.user} className="user" alt="" />
 					</div>
-					<Dropdown
-						selectedProvider={selectedProvider}
-						selectedModel={selectedModel}
-						onProviderChange={setSelectedProvider}
-						onModelChange={setSelectedModel}
-						modelOptions={MODEL_OPTIONS}
-					/>
-					<ToggleSwitch label={"Docs"} checked={isDocsEnabled} onToggle={handleDocsToggle} />
-					<ToggleSwitch label={"Web"} checked={isWebToolsEnabled} onToggle={handleWebToolsToggle} />
-					<div className="user-meta">
-						<p className="user-name">{shortName}</p>
-						{displayEmail && <p className="user-email">{displayEmail}</p>}
-					</div>
-					<img src={assets.user} className="user" alt="" />
 				</div>
 			</div>
 			<div className="main-content">
@@ -813,18 +850,20 @@ const Main = ({ user }) => {
 										</div>
 									</div>
 								)}
-							</div>
-							{downloadData &&
+								</div>
+							{canShowFeedback &&
 								<div className="result-data feedback-row" ref={agentDataRef} style={{ overflow: 'auto' }}>
-									<button
-										type="button"
-										className="download-button"
-										onClick={generatePDF}
-										title="Download report"
-										aria-label="Download report"
-									>
-										<img src={assets.download_icon} alt="" />
-									</button>
+									{downloadData && (
+										<button
+											type="button"
+											className="download-button"
+											onClick={generatePDF}
+											title="Download report"
+											aria-label="Download report"
+										>
+											<img src={assets.download_icon} alt="" />
+										</button>
+									)}
 									<div className="feedback-actions" aria-label="Rate this answer">
 										<button
 											type="button"
@@ -860,71 +899,59 @@ const Main = ({ user }) => {
 								</div>
 
 							}
-
-							{downloadData && <h1 className="result-data" style={{ marginBottom: '10px' }}>Recommended Questions</h1>}
-							<div className="result-data" ref={agentDataRef} style={{ display: 'flex', gap: '10px' }}>
-								{downloadData &&
-									<div
-										className="card"
-										style={{
-											minHeight: '10vh',
-											width: '33%',  // Allow each card to take up to 33% of the width
-											marginRight: '20px',
-											display: 'flex',  // Ensure the card uses flexbox
-											flexDirection: 'column',  // Align content vertically
-											justifyContent: 'center',  // Center the text vertically within the card
-											alignItems: 'center',  // Center text horizontally
-											overflow: 'hidden',  // Hide overflow if text exceeds the card's boundaries
-											//wordWrap: 'break-word',  // Break long words if needed to fit inside the card
-											textOverflow: 'ellipsis',  // Show ellipsis if the text is too long
-										}}
-										onClick={() => handleCardClick(reccQs[0])}
-									>
-										<p style={{ textAlign: "left", fontSize: '15px', margin: '0px 6px', padding: '2px' }}>{reccQs[0]}</p>
+							{canShowFeedback && feedbackChoice && (
+								feedbackStatus === "sent" ? (
+									<div className="feedback-thanks" role="status">
+										<span>Thanks for the feedback.</span>
 									</div>
-								}
-
-								{downloadData &&
-									<div
-										className="card"
-										style={{
-											minHeight: '10vh',
-											width: '33%',  // Allow each card to take up to 33% of the width
-											marginRight: '20px',
-											display: 'flex',
-											flexDirection: 'column',
-											justifyContent: 'center',
-											alignItems: 'center',
-											overflow: 'hidden',  // Hide overflow if text exceeds the card's boundaries
-											//wordWrap: 'break-word',  // Break long words if needed to fit inside the card
-											textOverflow: 'ellipsis',  // Show ellipsis if the text is too long
-										}}
-										onClick={() => handleCardClick(reccQs[1])}
-									>
-										<p style={{ textAlign: "left", fontSize: '15px', margin: '0px 6px', padding: '2px' }}>{reccQs[1]}</p>
+								) : (
+									<div className="feedback-comment">
+										<label className="feedback-comment__label" htmlFor="feedback-comment">
+											Add a comment (optional)
+										</label>
+										<textarea
+											id="feedback-comment"
+											className="feedback-comment__input"
+											value={feedbackComment}
+											onChange={(e) => setFeedbackComment(e.target.value)}
+											placeholder="Share what worked well or what was missing..."
+											rows={3}
+										/>
+										<div className="feedback-comment__actions">
+											<span className="feedback-comment__hint">
+												{feedbackStatus === "error"
+													? "Could not submit. Try again."
+													: "Submit to send your feedback."}
+											</span>
+											<button
+												type="button"
+												className="feedback-comment__submit"
+												onClick={handleFeedbackSubmit}
+												disabled={feedbackStatus === "sending" || !feedbackChoice}
+											>
+												{feedbackStatus === "sending" ? "Submitting..." : "Submit"}
+											</button>
+										</div>
 									</div>
-								}
+								)
+							)}
 
-								{downloadData &&
-									<div
-										className="card"
-										style={{
-											minHeight: '10vh',
-											width: '33%',  // Allow each card to take up to 33% of the width
-											display: 'flex',
-											flexDirection: 'column',
-											justifyContent: 'center',
-											alignItems: 'center',
-											overflow: 'hidden',  // Hide overflow if text exceeds the card's boundaries
-											// wordWrap: 'break-word',  // Break long words if needed to fit inside the card
-											textOverflow: 'ellipsis',  // Show ellipsis if the text is too long
-										}}
-										onClick={() => handleCardClick(reccQs[2])}
-									>
-										<p style={{ textAlign: "left", fontSize: '15px', margin: '0px 6px', padding: '2px' }}>{reccQs[2]}</p>
+							{hasRecommendations && (
+								<>
+									<h1 className="result-data" style={{ marginBottom: '10px' }}>Recommended Questions</h1>
+									<div className="result-data recommendations" ref={agentDataRef}>
+										{recommendedQuestions.slice(0, 3).map((question, index) => (
+											<div
+												key={`${question.slice(0, 24)}-${index}`}
+												className="card recommendation-card"
+												onClick={() => handleCardClick(question)}
+											>
+												<p className="recommendation-text">{question}</p>
+											</div>
+										))}
 									</div>
-								}
-							</div>
+								</>
+							)}
 						</div>
 					)}
 				</div>
@@ -936,20 +963,7 @@ const Main = ({ user }) => {
 							value={input}
 							placeholder="Ask about meetings, releases, specs, or upload docs..."
 							rows={1} // Start with 1 row
-							style={{
-								position: 'relative',
-								background: '#f0f4f9',
-								outline: 'none',
-								border: 'none',
-								width: '100%',
-								minHeight: '40px', // Minimum height for the textarea
-								maxHeight: '100px',
-								resize: 'none', // Disable manual resize by the user
-								overflow: 'hidden', // Hide overflow to prevent scrollbars
-								fontSize: '16px', // Adjust font size as needed
-								borderRadius: '5px', // Rounded corners for style
-								// overflowY: 'auto'
-							}}
+							className="search-input"
 						/>
 						<div className="button-container" ref={buttonContainerRef}>
 							<img

@@ -343,11 +343,7 @@ const GraphBar = ({ isOpen, onToggle, offset = 0, drawerWidth = 420, onResize })
                         <span className="panel-pill">Live</span>
                     </div>
                 )}
-                <div
-                    className="graph-render"
-                    style={{ height: '500px', width: '100%', marginTop: '10px' }}
-                    ref={graphContainerRef}
-                >
+                <div className="graph-render" ref={graphContainerRef}>
                     {nodes.length === 0 ? (
                         <div className="graph-empty">
                             <p>No graph yet.</p>
