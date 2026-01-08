@@ -89,7 +89,11 @@ services:
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-change-me}
       GF_SERVER_DOMAIN: monitor.wisdomlab3gpp.live
       GF_SERVER_ROOT_URL: https://monitor.wisdomlab3gpp.live
-      GF_SECURITY_CSRF_TRUSTED_ORIGINS: https://monitor.wisdomlab3gpp.live,https://monitor.wisdomlab3gpp.live:443,http://127.0.0.1:3005,http://localhost:3005
+      GF_SECURITY_CSRF_TRUSTED_ORIGINS: "https://monitor.wisdomlab3gpp.live,https://monitor.wisdomlab3gpp.live:443,http://127.0.0.1:3005,http://localhost:3005"
+      GF_LIVE_ALLOWED_ORIGINS: "https://monitor.wisdomlab3gpp.live,http://localhost:3005"
+      GF_SECURITY_CSRF_ADDITIONAL_HEADERS: "X-Forwarded-Host"
+      GF_SECURITY_COOKIE_SAMESITE: disabled
+      GF_SECURITY_CSRF_ALWAYS_CHECK: "false"
       GF_SMTP_ENABLED: "true"
       GF_SMTP_HOST: ${SMTP_HOST}:${SMTP_PORT}
       GF_SMTP_USER: ${SMTP_USER}
@@ -102,6 +106,7 @@ services:
       - grafana_data:/var/lib/grafana
       - ./grafana/provisioning/datasources:/etc/grafana/provisioning/datasources:ro
       - ./grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
     ports:
       - "127.0.0.1:3005:3000"
     depends_on:

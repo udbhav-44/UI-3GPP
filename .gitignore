@@ -13,3 +13,6 @@ pathway_report.md
 auth.db
 feedback_log.jsonl
 .env
+dist/
+build/
+output

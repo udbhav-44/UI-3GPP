@@ -14,12 +14,12 @@ This stack runs Prometheus, Alertmanager, Loki, Promtail, Blackbox Exporter, and
 
 ```bash
 cd /git_folder/udbhav/code/UI-3GPP/monitoring
-sudo docker compose up -d
+docker compose --env-file ../.env up -d
 ```
 
 ## Nginx
 
-Make sure nginx proxies `monitor.wisdomlab3gpp.live` to `127.0.0.1:3000` and has a valid cert.
+Make sure nginx proxies `monitor.wisdomlab3gpp.live` to `127.0.0.1:3005` and has a valid cert.
 
 ## Verify
 
@@ -28,6 +28,16 @@ curl -kI https://monitor.wisdomlab3gpp.live/
 ```
 
 Grafana default user is `admin` with the password from `GRAFANA_ADMIN_PASSWORD`.
+
+## Dashboards
+
+If the Grafana UI import shows `origin not allowed`, use the provisioning flow:
+
+```bash
+cd /git_folder/udbhav/code/UI-3GPP/monitoring
+python3 scripts/fetch_dashboards.py
+docker compose --env-file ../.env up -d --force-recreate
+```
 
 ## Notes
 
