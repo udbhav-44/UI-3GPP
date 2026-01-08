@@ -66,6 +66,7 @@ const Main = ({ user }) => {
 	const pendingThreadIdRef = useRef(null);
 	const abortControllerRef = useRef(null);
 	const isProcessingRef = useRef(false);
+	const activeThreadIdRef = useRef(activeThreadId);
 
 	const [markdownContent, setMarkdownContent] = useState('');
 	const [reccQs, setReccQs] = useState([])
@@ -79,6 +80,11 @@ const Main = ({ user }) => {
 	const [feedbackComment, setFeedbackComment] = useState("");
 	const responseIdRef = useRef(null);
 	const [isProcessing, setIsProcessing] = useState(false);
+	const verboseLineRef = useRef(null);
+	const verboseContentRef = useRef(null);
+	const [verboseExpanded, setVerboseExpanded] = useState(false);
+	const [copiedMessageId, setCopiedMessageId] = useState(null);
+	const copiedMessageTimerRef = useRef(null);
 	const MODEL_OPTIONS = {
 		openai: [
 			"gpt-4o-mini",
@@ -149,7 +155,15 @@ const Main = ({ user }) => {
 	const dropdownRef = useRef(null);
 	const buttonContainerRef = useRef(null);
 	const apiBaseUrl = getApiBaseUrl() || (typeof window !== "undefined" ? window.location.origin : "");
-	const wsBaseUrl = (import.meta.env.VITE_WS_BASE_URL || apiBaseUrl || "ws://localhost").replace(/^http/, "ws");
+	const normalizeWsBase = (url) => url.replace(/^http/, "ws").replace(/\/$/, "");
+	const rawWsBaseUrl = import.meta.env.VITE_WS_BASE_URL || apiBaseUrl || "ws://localhost";
+	const wsBaseUrl = normalizeWsBase(rawWsBaseUrl);
+	const wsRootBaseUrl = wsBaseUrl.endsWith("/ws") ? wsBaseUrl.slice(0, -3) : wsBaseUrl;
+	const agentBaseUrl = normalizeWsBase(import.meta.env.VITE_AGENT_WS_BASE_URL || wsRootBaseUrl);
+	const mainWsUrl = wsBaseUrl.endsWith("/ws") ? wsBaseUrl : `${wsBaseUrl}/ws`;
+	const agentWsUrl = agentBaseUrl.endsWith("/agent-ws")
+		? agentBaseUrl
+		: `${agentBaseUrl}/agent-ws`;
 
 	const generatePDF = () => {
 		// Send the raw Markdown content to the backend
@@ -213,6 +227,7 @@ const Main = ({ user }) => {
 	useEffect(() => {
 		setFeedbackChoice(null);
 		setFeedbackStatus("idle");
+		setCopiedMessageId(null);
 	}, [activeThreadId]);
 
 	useEffect(() => {
@@ -223,6 +238,10 @@ const Main = ({ user }) => {
 			cancelRenderCycle();
 		}
 	}, [activeThreadId, cancelRenderCycle, setLoading]);
+
+	useEffect(() => {
+		activeThreadIdRef.current = activeThreadId;
+	}, [activeThreadId]);
 
 	useEffect(() => {
 		if (!downloadData || !pendingThreadIdRef.current) {
@@ -257,6 +276,42 @@ const Main = ({ user }) => {
 	const displayEmail = user?.email || "";
 	const recommendedQuestions = reccQs.filter((question) => Boolean(question));
 	const hasRecommendations = recommendedQuestions.length > 0;
+	const lastAssistantIndex = useMemo(() => {
+		for (let i = chatMessages.length - 1; i >= 0; i -= 1) {
+			const role = (chatMessages[i]?.role || "assistant").toLowerCase();
+			if (role === "assistant") {
+				return i;
+			}
+		}
+		return -1;
+	}, [chatMessages]);
+	const sanitizeLogLine = (line) => {
+		return line
+			.replace(/\[(.*?)\]\((.*?)\)/g, "$1 ($2)")
+			.replace(/`{1,3}/g, "")
+			.replace(/\*\*(.*?)\*\*/g, "$1")
+			.replace(/_(.*?)_/g, "$1")
+			.replace(/^\s*#{1,6}\s*/, "")
+			.replace(/^\s*[-*+]\s+/, "")
+			.trim();
+	};
+	const sanitizedLogLines = useMemo(() => {
+		if (!agentData) {
+			return [];
+		}
+		return agentData
+			.replace(/\r\n/g, "\n")
+			.split("\n")
+			.map((line) => sanitizeLogLine(line))
+			.filter((line, index, arr) => line || (index > 0 && arr[index - 1]));
+	}, [agentData]);
+	const latestLogLine = useMemo(() => {
+		if (!sanitizedLogLines.length) {
+			return "";
+		}
+		return sanitizedLogLines[sanitizedLogLines.length - 1];
+	}, [sanitizedLogLines]);
+	const verboseText = useMemo(() => sanitizedLogLines.join("\n"), [sanitizedLogLines]);
 	const lastAssistantMessage = useMemo(() => {
 		for (let i = chatMessages.length - 1; i >= 0; i -= 1) {
 			const role = (chatMessages[i]?.role || "assistant").toLowerCase();
@@ -400,6 +455,67 @@ const Main = ({ user }) => {
 		setIsProcessing(false);
 		abortControllerRef.current = null;
 	}, [downloadData]);
+
+	useEffect(() => {
+		if (verboseLineRef.current) {
+			verboseLineRef.current.scrollLeft = verboseLineRef.current.scrollWidth;
+		}
+	}, [latestLogLine]);
+
+	useEffect(() => {
+		if (!verboseExpanded || !verboseContentRef.current) {
+			return;
+		}
+		verboseContentRef.current.scrollTop = verboseContentRef.current.scrollHeight;
+	}, [verboseText, verboseExpanded]);
+
+	useEffect(() => {
+		return () => {
+			if (copiedMessageTimerRef.current) {
+				clearTimeout(copiedMessageTimerRef.current);
+			}
+		};
+	}, []);
+
+	const handleCopyText = async (text) => {
+		if (!text) {
+			return false;
+		}
+		try {
+			if (navigator?.clipboard?.writeText) {
+				await navigator.clipboard.writeText(text);
+				return true;
+			}
+			const textarea = document.createElement("textarea");
+			textarea.value = text;
+			textarea.setAttribute("readonly", "");
+			textarea.style.position = "fixed";
+			textarea.style.top = "-1000px";
+			document.body.appendChild(textarea);
+			textarea.focus();
+			textarea.select();
+			const ok = document.execCommand("copy");
+			document.body.removeChild(textarea);
+			return ok;
+		} catch (error) {
+			console.error("Failed to copy content:", error);
+			return false;
+		}
+	};
+
+	const handleCopyMessage = async (text, id) => {
+		const ok = await handleCopyText(text);
+		if (!ok) {
+			return;
+		}
+		setCopiedMessageId(id);
+		if (copiedMessageTimerRef.current) {
+			clearTimeout(copiedMessageTimerRef.current);
+		}
+		copiedMessageTimerRef.current = setTimeout(() => {
+			setCopiedMessageId(null);
+		}, 1200);
+	};
 
 	const handleFeedback = (rating) => {
 		if (!canShowFeedback || feedbackStatus === "sending") {
@@ -560,7 +676,7 @@ const Main = ({ user }) => {
 	useEffect(() => {
 
 		try {
-			const ws = new WebSocket(`${wsBaseUrl}/agent-ws`);
+			const ws = new WebSocket(agentWsUrl);
 
 			ws.onopen = () => {
 				console.log('WebSocket connected to agent server');
@@ -570,6 +686,11 @@ const Main = ({ user }) => {
 			ws.onmessage = (event) => {
 				try {
 					const data = JSON.parse(event.data);
+					const currentThreadId = activeThreadIdRef.current;
+					const incomingThreadId = data.thread_id;
+					if (incomingThreadId && currentThreadId && String(incomingThreadId) !== String(currentThreadId)) {
+						return;
+					}
 
 					// ✅ HANDLE VERBOSE LOGS
 					if (data.type === 'logs') {
@@ -589,8 +710,8 @@ const Main = ({ user }) => {
 						}
 						const columns = Array.isArray(data.columns) ? data.columns.filter(Boolean) : [];
 						const rows = Array.isArray(data.rows) ? data.rows : [];
-						setResultsTable({ columns, rows });
-						setResultsUpdatedAt(Date.now());
+						setResultsTable({ columns, rows }, data.thread_id);
+						setResultsUpdatedAt(Date.now(), data.thread_id);
 					}
 
 				} catch (error) {
@@ -616,7 +737,7 @@ const Main = ({ user }) => {
 	}, []);
 
 	useEffect(() => {
-		const ws = new WebSocket(`${wsBaseUrl}/ws`);
+		const ws = new WebSocket(mainWsUrl);
 		try {
 			ws.onopen = () => {
 				console.log('WebSocket connected');
@@ -783,36 +904,101 @@ const Main = ({ user }) => {
 							<div className="chat-thread">
 								{chatMessages.map((message, index) => {
 									const role = (message.role || "assistant").toLowerCase();
+									const messageKey = message.id || `${role}-${index}`;
+									const isAssistantCopied = copiedMessageId === messageKey;
+									const isLastAssistant = role === "assistant" && index === lastAssistantIndex;
 									return (
-										<div
-											key={message.id || index}
-											className={`chat-row ${role}`}
-										>
-											<img
-												src={role === "user" ? assets.user : assets.pway_icon}
-												className="chat-avatar"
-												alt=""
-											/>
-											<div className={`chat-bubble ${role}`}>
-												{role === "user" ? (
-													<p>{message.content}</p>
-												) : (
-													<ReactMarkdown
-														rehypePlugins={[rehypeRaw, [rehypeKatex, { throwOnError: false, strict: "ignore" }]]}
-														remarkPlugins={[remarkGfm, remarkMath]}
-														components={{
-															a: ({ href, children }) => (
-																<a href={href} target="_blank" rel="noopener noreferrer">
-																	{children}
-																</a>
-															)
-														}}
-													>
-														{message.content}
-													</ReactMarkdown>
-												)}
+										<React.Fragment key={messageKey}>
+											<div className={`chat-row ${role}`}>
+												<img
+													src={role === "user" ? assets.user : assets.pway_icon}
+													className="chat-avatar"
+													alt=""
+												/>
+												<div className={`chat-bubble ${role}`}>
+													{role === "user" ? (
+														<p className="chat-bubble__text">{message.content}</p>
+													) : (
+														<ReactMarkdown
+															rehypePlugins={[rehypeRaw, [rehypeKatex, { throwOnError: false, strict: "ignore" }]]}
+															remarkPlugins={[remarkGfm, remarkMath]}
+															components={{
+																a: ({ href, children }) => (
+																	<a href={href} target="_blank" rel="noopener noreferrer">
+																		{children}
+																	</a>
+																)
+															}}
+														>
+															{message.content}
+														</ReactMarkdown>
+													)}
+												</div>
 											</div>
-										</div>
+											{role === "assistant" && (
+												<div className="chat-row chat-actions-row">
+													<div className="chat-actions">
+														<button
+															type="button"
+															className="feedback-button copy"
+															onClick={() => handleCopyMessage(message.content, messageKey)}
+															title="Copy answer"
+															aria-label="Copy answer"
+														>
+															{isAssistantCopied ? (
+																<svg viewBox="0 0 24 24" aria-hidden="true">
+																	<path
+																		fill="currentColor"
+																		d="M9 16.17l-3.88-3.88L3.7 13.7 9 19l12-12-1.41-1.41z"
+																	/>
+																</svg>
+															) : (
+																<svg viewBox="0 0 24 24" aria-hidden="true">
+																	<path
+																		fill="currentColor"
+																		d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"
+																	/>
+																</svg>
+															)}
+														</button>
+														{canShowFeedback && isLastAssistant && (
+															<>
+																<button
+																	type="button"
+																	className={`feedback-button up ${feedbackChoice === "up" ? "active" : ""}`}
+																	onClick={() => handleFeedback("up")}
+																	disabled={feedbackStatus === "sending"}
+																	title="Thumbs up"
+																	aria-label="Thumbs up"
+																>
+																	<svg viewBox="0 0 24 24" aria-hidden="true">
+																		<path
+																			fill="currentColor"
+																			d="M2 21h4V9H2v12zm20-11c0-1.1-.9-2-2-2h-6.3l1-4.6.03-.32c0-.41-.17-.79-.44-1.06L13 1 7.6 6.4C7.22 6.78 7 7.3 7 7.83V19c0 1.1.9 2 2 2h7c.82 0 1.54-.5 1.84-1.22l3-7.05c.1-.23.16-.48.16-.73V10z"
+																		/>
+																	</svg>
+																</button>
+																<button
+																	type="button"
+																	className={`feedback-button down ${feedbackChoice === "down" ? "active" : ""}`}
+																	onClick={() => handleFeedback("down")}
+																	disabled={feedbackStatus === "sending"}
+																	title="Thumbs down"
+																	aria-label="Thumbs down"
+																>
+																	<svg viewBox="0 0 24 24" aria-hidden="true">
+																		<path
+																			fill="currentColor"
+																			d="M22 3h-4v12h4V3zM2 14c0 1.1.9 2 2 2h6.3l-1 4.6-.03.32c0 .41.17.79.44 1.06L11 23l5.4-5.4c.38-.38.6-.9.6-1.43V5c0-1.1-.9-2-2-2H8c-.82 0-1.54.5-1.84 1.22l-3 7.05c-.1.23-.16.48-.16.73V14z"
+																		/>
+																	</svg>
+																</button>
+															</>
+														)}
+													</div>
+												</div>
+											)}
+										</React.Fragment>
 									);
 								})}
 								{(loading || resultData || agentData) && (
@@ -820,20 +1006,58 @@ const Main = ({ user }) => {
 										<img src={assets.pway_icon} className="chat-avatar" alt="" />
 										<div className={`chat-bubble assistant ${loading ? "loading" : ""}`}>
 											{loading ? (
-												<div className="assistant-loading">
-													<div className="assistant-loading__header">
-														<span className="assistant-loading__badge">Processing</span>
-														<div className="assistant-loading__dots" aria-hidden="true">
-															<span />
-															<span />
-															<span />
+												agentData ? (
+													<div className="assistant-verbose">
+														<div className="assistant-verbose__header">
+															<span className="assistant-verbose__badge">Processing log</span>
+															<div className="assistant-verbose__actions">
+																<div className="assistant-loading__dots" aria-hidden="true">
+																	<span />
+																	<span />
+																	<span />
+																</div>
+																<button
+																	type="button"
+																	className="assistant-verbose__toggle"
+																	onClick={() => setVerboseExpanded((prev) => !prev)}
+																	aria-expanded={verboseExpanded}
+																	aria-label={verboseExpanded ? "Collapse processing log" : "Expand processing log"}
+																	title={verboseExpanded ? "Collapse" : "Expand"}
+																>
+																	<span className="assistant-verbose__chevron" aria-hidden="true" />
+																</button>
+															</div>
+														</div>
+														<div
+															className="assistant-verbose__line"
+															ref={verboseLineRef}
+															title={latestLogLine}
+															onClick={() => setVerboseExpanded(true)}
+														>
+															{latestLogLine || "Waiting for logs..."}
+														</div>
+														{verboseExpanded && (
+															<pre className="assistant-verbose__full" ref={verboseContentRef}>
+																{verboseText || "Waiting for logs..."}
+															</pre>
+														)}
+													</div>
+												) : (
+													<div className="assistant-loading">
+														<div className="assistant-loading__header">
+															<span className="assistant-loading__badge">Processing</span>
+															<div className="assistant-loading__dots" aria-hidden="true">
+																<span />
+																<span />
+																<span />
+															</div>
+														</div>
+														<div className="assistant-loading__lines">
+															<span className="assistant-loading__line line-lg" />
+															<span className="assistant-loading__line line-md" />
 														</div>
 													</div>
-													<div className="assistant-loading__lines">
-														<span className="assistant-loading__line line-lg" />
-														<span className="assistant-loading__line line-md" />
-													</div>
-												</div>
+												)
 											) : (
 												<ReactMarkdown
 													rehypePlugins={[rehypeRaw, [rehypeKatex, { throwOnError: false, strict: "ignore" }]]}
@@ -866,38 +1090,6 @@ const Main = ({ user }) => {
 											<img src={assets.download_icon} alt="" />
 										</button>
 									)}
-									<div className="feedback-actions" aria-label="Rate this answer">
-										<button
-											type="button"
-											className={`feedback-button up ${feedbackChoice === "up" ? "active" : ""}`}
-											onClick={() => handleFeedback("up")}
-											disabled={feedbackStatus === "sending"}
-											title="Thumbs up"
-											aria-label="Thumbs up"
-										>
-											<svg viewBox="0 0 24 24" aria-hidden="true">
-												<path
-													fill="currentColor"
-													d="M2 21h4V9H2v12zm20-11c0-1.1-.9-2-2-2h-6.3l1-4.6.03-.32c0-.41-.17-.79-.44-1.06L13 1 7.6 6.4C7.22 6.78 7 7.3 7 7.83V19c0 1.1.9 2 2 2h7c.82 0 1.54-.5 1.84-1.22l3-7.05c.1-.23.16-.48.16-.73V10z"
-												/>
-											</svg>
-										</button>
-										<button
-											type="button"
-											className={`feedback-button down ${feedbackChoice === "down" ? "active" : ""}`}
-											onClick={() => handleFeedback("down")}
-											disabled={feedbackStatus === "sending"}
-											title="Thumbs down"
-											aria-label="Thumbs down"
-										>
-											<svg viewBox="0 0 24 24" aria-hidden="true">
-												<path
-													fill="currentColor"
-													d="M22 3h-4v12h4V3zM2 14c0 1.1.9 2 2 2h6.3l-1 4.6-.03.32c0 .41.17.79.44 1.06L11 23l5.4-5.4c.38-.38.6-.9.6-1.43V5c0-1.1-.9-2-2-2H8c-.82 0-1.54.5-1.84 1.22l-3 7.05c-.1.23-.16.48-.16.73V14z"
-												/>
-											</svg>
-										</button>
-									</div>
 								</div>
 
 							}

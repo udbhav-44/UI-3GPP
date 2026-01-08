@@ -462,6 +462,22 @@
     border-color: rgba(148, 163, 184, 0.15);
 }
 
+.chat-bubble__text {
+    margin: 0;
+}
+
+.chat-actions-row {
+    margin-left: 54px;
+    margin-top: 6px;
+    align-self: flex-start;
+}
+
+.chat-actions {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+}
+
 .chat-bubble.assistant {
     background: #ffffff;
 }
@@ -533,6 +549,7 @@
     opacity: 0.6;
     cursor: not-allowed;
 }
+
 
 .feedback-comment {
     margin-left: 54px;
@@ -694,6 +711,100 @@
 
 .assistant-loading__line.line-sm {
     width: 62%;
+}
+
+.assistant-verbose {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    min-width: 240px;
+}
+
+.assistant-verbose__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.assistant-verbose__badge {
+    font-size: 0.75rem;
+    font-weight: 600;
+    padding: 4px 10px;
+    border-radius: 999px;
+    background: rgba(14, 165, 233, 0.16);
+    color: #0f172a;
+    border: 1px solid rgba(14, 165, 233, 0.3);
+}
+
+.assistant-verbose__actions {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.assistant-verbose__toggle {
+    border: none;
+    background: rgba(148, 163, 184, 0.12);
+    color: #1f2937;
+    font-size: 0.72rem;
+    font-weight: 600;
+    padding: 4px 10px;
+    border-radius: 999px;
+    cursor: pointer;
+    transition: background 0.2s ease;
+    width: 28px;
+    height: 28px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.assistant-verbose__toggle:hover {
+    background: rgba(148, 163, 184, 0.24);
+}
+
+.assistant-verbose__chevron {
+    width: 8px;
+    height: 8px;
+    border-right: 2px solid #1f2937;
+    border-bottom: 2px solid #1f2937;
+    transform: rotate(45deg);
+    transition: transform 0.2s ease;
+}
+
+.assistant-verbose__toggle[aria-expanded="true"] .assistant-verbose__chevron {
+    transform: rotate(-135deg);
+}
+
+.assistant-verbose__line {
+    margin: 0;
+    padding: 10px 12px;
+    border-radius: 12px;
+    background: #f8fafc;
+    border: 1px solid rgba(148, 163, 184, 0.3);
+    font-size: 0.85rem;
+    line-height: 1.5;
+    max-height: 32px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    white-space: nowrap;
+    font-family: "Sora", "Outfit", sans-serif;
+    cursor: pointer;
+}
+
+.assistant-verbose__full {
+    margin: 0;
+    padding: 12px;
+    border-radius: 12px;
+    background: #ffffff;
+    border: 1px solid rgba(148, 163, 184, 0.25);
+    font-size: 0.85rem;
+    line-height: 1.5;
+    max-height: 240px;
+    overflow: auto;
+    white-space: pre-wrap;
+    font-family: "Sora", "Outfit", sans-serif;
 }
 
 @keyframes shimmer {

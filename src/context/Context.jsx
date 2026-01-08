@@ -4,6 +4,7 @@ import { addChatMessage, createChat, getChat, listChats, deleteChat } from "../s
 
 export const Context = createContext();
 
+const EMPTY_RESULTS_TABLE = { columns: [], rows: [] };
 
 const ContextProvider = (props) => {
 	const [input, setInput] = useState("");
@@ -28,11 +29,8 @@ const ContextProvider = (props) => {
 	const resp = useRef(false);
 	const renderTokenRef = useRef(0);
 	const uploadNoticeTimerRef = useRef(null);
-	const [resultsTable, setResultsTable] = useState({
-    columns: [],
-    rows: []
-  });
-	const [resultsUpdatedAt, setResultsUpdatedAt] = useState(null);
+	const [resultsTablesByThread, setResultsTablesByThread] = useState({});
+	const [resultsUpdatedAtByThread, setResultsUpdatedAtByThread] = useState({});
 	const [threads, setThreads] = useState([]);
 	const [activeThreadId, setActiveThreadId] = useState(null);
 	const [chatMessages, setChatMessages] = useState([]);
@@ -94,6 +92,32 @@ const ContextProvider = (props) => {
 		setChatMessages([]);
 		setActiveThreadId(null);
 		setRecentPrompt("");
+	};
+
+	const getThreadKey = (threadId) => {
+		if (threadId) {
+			return String(threadId);
+		}
+		return activeThreadId ? String(activeThreadId) : "global";
+	};
+
+	const resultsTable = resultsTablesByThread[getThreadKey()] || EMPTY_RESULTS_TABLE;
+	const resultsUpdatedAt = resultsUpdatedAtByThread[getThreadKey()] || null;
+
+	const setResultsTable = (table, threadId = null) => {
+		const key = getThreadKey(threadId);
+		setResultsTablesByThread((prev) => ({
+			...prev,
+			[key]: table,
+		}));
+	};
+
+	const setResultsUpdatedAt = (timestamp, threadId = null) => {
+		const key = getThreadKey(threadId);
+		setResultsUpdatedAtByThread((prev) => ({
+			...prev,
+			[key]: timestamp,
+		}));
 	};
 
 	const startRenderCycle = () => {
@@ -193,6 +217,16 @@ const ContextProvider = (props) => {
 			setThreads((prev) =>
 				prev.filter((thread) => String(thread.id) !== String(threadId))
 			);
+			setResultsTablesByThread((prev) => {
+				const next = { ...prev };
+				delete next[String(threadId)];
+				return next;
+			});
+			setResultsUpdatedAtByThread((prev) => {
+				const next = { ...prev };
+				delete next[String(threadId)];
+				return next;
+			});
 			if (String(activeThreadId) === String(threadId)) {
 				localStorage.removeItem("ui3gpp_active_thread");
 				newChat();
