@@ -278,6 +278,11 @@ def clear_reset_token(user_id):
         conn.commit()
 
 
+@app.route("/api/health", methods=["GET"])
+def health_check():
+    return jsonify({"status": "ok"}), 200
+
+
 @app.route("/api/auth/signup", methods=["POST"])
 def auth_signup():
     data = request.get_json() or {}
