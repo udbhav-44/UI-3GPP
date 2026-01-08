@@ -8,6 +8,8 @@ import { TypeAnimation } from 'react-type-animation';
 import ReactMarkdown from "react-markdown";
 import rehypeRaw from "rehype-raw";
 import remarkGfm from "remark-gfm";
+import remarkMath from "remark-math";
+import rehypeKatex from "rehype-katex";
 import { FaCloudUploadAlt, FaGoogleDrive } from "react-icons/fa";
 import { getApiBaseUrl } from "../../services/auth";
 import { getToken } from "../../services/authToken";
@@ -796,8 +798,8 @@ const Main = ({ user }) => {
 													<p>{message.content}</p>
 												) : (
 													<ReactMarkdown
-														rehypePlugins={[rehypeRaw]}
-														remarkPlugins={[remarkGfm]}
+														rehypePlugins={[rehypeRaw, [rehypeKatex, { throwOnError: false, strict: "ignore" }]]}
+														remarkPlugins={[remarkGfm, remarkMath]}
 														components={{
 															a: ({ href, children }) => (
 																<a href={href} target="_blank" rel="noopener noreferrer">
@@ -834,8 +836,8 @@ const Main = ({ user }) => {
 												</div>
 											) : (
 												<ReactMarkdown
-													rehypePlugins={[rehypeRaw]}
-													remarkPlugins={[remarkGfm]}
+													rehypePlugins={[rehypeRaw, [rehypeKatex, { throwOnError: false, strict: "ignore" }]]}
+													remarkPlugins={[remarkGfm, remarkMath]}
 													components={{
 														a: ({ href, children }) => (
 															<a href={href} target="_blank" rel="noopener noreferrer">

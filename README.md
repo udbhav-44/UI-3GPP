@@ -36,6 +36,18 @@ app
 3. **``app.py``**:
     - This serves as our flask backend for rendering images and plots and parsing content. It helps out in the data visualization component by extracting the data of the companies and sending it to the front end. It also finds use in downloading the Markdown response of the user.
 
+## Build and deploy (nginx)
+This UI is built with Vite. The production bundle is generated in `dist/`.
+
+```
+npm install
+npm run build
+```
+
+Deploy the generated `dist/` contents to the directory nginx serves (configured by the `root` in your nginx site). If you only update static assets, you do not need to reload nginx; just replace the files. Reload nginx only when the nginx config changes.
+
+## Markdown + math rendering
+Assistant responses support Markdown and inline/block math via KaTeX (e.g. `$...$` and `$$...$$`).
  
  ![image](../assets/full_ui.png)
 

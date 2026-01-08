@@ -299,6 +299,7 @@
     height: 74vh;
     margin: 0 auto;
     overflow-y: scroll;
+    overflow-x: hidden;
     text-align: left;
     gap: 20px;
     padding-top: 12px;
@@ -346,6 +347,7 @@
     gap: 18px;
     padding-bottom: 20px;
     text-align: left;
+    min-width: 0;
 }
 
 .chat-row {
@@ -353,6 +355,7 @@
     gap: 16px;
     align-items: flex-start;
     width: 100%;
+    min-width: 0;
 }
 
 .chat-row.user {
@@ -395,6 +398,62 @@
     font-size: 0.95rem;
     color: #1f2937;
     word-break: break-word;
+    overflow-wrap: anywhere;
+    min-width: 0;
+}
+
+.chat-bubble > * {
+    max-width: 100%;
+}
+
+.chat-bubble ul,
+.chat-bubble ol {
+    margin: 0.5em 0;
+    padding-left: 1.1em;
+    list-style-position: inside;
+}
+
+.chat-bubble li {
+    margin: 0.2em 0;
+    overflow-wrap: anywhere;
+}
+
+.chat-bubble li > p {
+    margin: 0.3em 0;
+}
+
+.chat-bubble h1,
+.chat-bubble h2,
+.chat-bubble h3,
+.chat-bubble h4 {
+    margin: 0.6em 0 0.4em;
+    line-height: 1.25;
+}
+
+.chat-bubble a {
+    word-break: break-word;
+}
+
+.chat-bubble pre,
+.chat-bubble code {
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+.chat-bubble pre {
+    max-width: 100%;
+    overflow-x: auto;
+}
+
+.chat-bubble img {
+    max-width: 100%;
+    height: auto;
+}
+
+.chat-bubble table {
+    display: block;
+    max-width: 100%;
+    overflow-x: auto;
 }
 
 .chat-bubble.user {
