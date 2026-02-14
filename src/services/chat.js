@@ -31,6 +31,9 @@ export const createChat = (title) =>
 export const getChat = (threadId) =>
   request(`/api/chats/${threadId}`, { method: "GET" });
 
+export const getChatResults = (threadId) =>
+  request(`/api/chats/${threadId}/results`, { method: "GET" });
+
 export const addChatMessage = (threadId, payload) =>
   request(`/api/chats/${threadId}/messages`, {
     method: "POST",

@@ -5,9 +5,12 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from dotenv import load_dotenv
 from convert import convert_to_html
 from datetime import datetime, timedelta, timezone
+from urllib.parse import urlparse
+import csv
 import json
 import hashlib
 import os
+import re
 import jwt
 import secrets
 import smtplib
@@ -21,6 +24,12 @@ app.secret_key = os.getenv("SECRET_KEY", os.getenv("JWT_SECRET", "change-me"))
 CORS(app)
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+PIPELINE_ROOT = os.path.abspath(
+    os.getenv("PIPELINE_ROOT", os.path.join(BASE_DIR, "..", "3GPP-pipeline"))
+)
+PIPELINE_ARTIFACTS_DIR = os.path.abspath(
+    os.getenv("PIPELINE_ARTIFACTS_DIR", os.path.join(PIPELINE_ROOT, "output", "artifacts"))
+)
 AUTH_DB_PATH = os.getenv("AUTH_DB_PATH", os.path.join(BASE_DIR, "auth.db"))
 CHAT_DB_PATH = os.getenv("CHAT_DB_PATH", AUTH_DB_PATH)
 JWT_SECRET = os.getenv("JWT_SECRET", "change-me")
@@ -50,6 +59,13 @@ GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
 GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET")
 GOOGLE_REDIRECT_URI = os.getenv("GOOGLE_REDIRECT_URI")
 
+frontend_host = urlparse(FRONTEND_URL).hostname
+use_secure_cookies = FRONTEND_URL.startswith("https")
+if frontend_host and frontend_host not in {"localhost", "127.0.0.1"}:
+    app.config["SESSION_COOKIE_DOMAIN"] = frontend_host
+app.config["SESSION_COOKIE_SAMESITE"] = "None" if use_secure_cookies else "Lax"
+app.config["SESSION_COOKIE_SECURE"] = use_secure_cookies
+
 oauth = OAuth(app)
 if GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET:
     oauth.register(
@@ -57,6 +73,7 @@ if GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET:
         client_id=GOOGLE_CLIENT_ID,
         client_secret=GOOGLE_CLIENT_SECRET,
         server_metadata_url="https://accounts.google.com/.well-known/openid-configuration",
+        api_base_url="https://openidconnect.googleapis.com/v1/",
         client_kwargs={"scope": "openid email profile"},
     )
 
@@ -107,6 +124,19 @@ def init_chat_db():
                 content TEXT NOT NULL,
                 source TEXT,
                 response_id TEXT,
+                created_at TEXT NOT NULL
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS chat_message_attachments (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                message_id INTEGER NOT NULL,
+                thread_id INTEGER NOT NULL,
+                filename TEXT NOT NULL,
+                mime_type TEXT,
+                size INTEGER,
                 created_at TEXT NOT NULL
             )
             """
@@ -239,6 +269,33 @@ def get_user_by_id(user_id):
             "SELECT * FROM users WHERE id = ?",
             (user_id,),
         ).fetchone()
+
+
+def _sanitize_thread_id(thread_id):
+    if thread_id is None:
+        return None
+    value = str(thread_id).strip()
+    if not value:
+        return None
+    return re.sub(r"[^A-Za-z0-9_.-]+", "_", value)
+
+
+def _load_results_table(thread_id):
+    safe_thread_id = _sanitize_thread_id(thread_id)
+    if not safe_thread_id:
+        return {"columns": [], "rows": [], "updated_at": None}
+    csv_path = os.path.join(PIPELINE_ARTIFACTS_DIR, safe_thread_id, "Results.csv")
+    if not os.path.exists(csv_path):
+        return {"columns": [], "rows": [], "updated_at": None}
+    try:
+        with open(csv_path, "r", newline="") as handle:
+            reader = csv.DictReader(handle)
+            rows = list(reader)
+            columns = reader.fieldnames or []
+        updated_at = int(os.path.getmtime(csv_path) * 1000)
+        return {"columns": columns, "rows": rows, "updated_at": updated_at}
+    except FileNotFoundError:
+        return {"columns": [], "rows": [], "updated_at": None}
 
 
 def require_user_id():
@@ -423,7 +480,7 @@ def auth_google_login():
     if not GOOGLE_CLIENT_ID or not GOOGLE_CLIENT_SECRET:
         return jsonify({"error": "Google OAuth is not configured"}), 500
     redirect_uri = GOOGLE_REDIRECT_URI or url_for("auth_google_callback", _external=True)
-    return oauth.google.authorize_redirect(redirect_uri)
+    return oauth.google.authorize_redirect(redirect_uri, prompt="select_account")
 
 
 @app.route("/api/auth/google/callback", methods=["GET"])
@@ -432,8 +489,22 @@ def auth_google_callback():
         return jsonify({"error": "Google OAuth is not configured"}), 500
     try:
         token = oauth.google.authorize_access_token()
-        user_info = oauth.google.get("userinfo").json()
+        try:
+            user_info = oauth.google.get("userinfo").json()
+        except Exception:
+            userinfo_endpoint = (
+                oauth.google.server_metadata.get("userinfo_endpoint")
+                if getattr(oauth.google, "server_metadata", None)
+                else None
+            )
+            userinfo_endpoint = userinfo_endpoint or "https://openidconnect.googleapis.com/v1/userinfo"
+            user_info = oauth.google.get(userinfo_endpoint).json()
     except Exception:
+        app.logger.exception(
+            "Google OAuth callback failed (error=%s, description=%s)",
+            request.args.get("error"),
+            request.args.get("error_description"),
+        )
         return redirect(f"{FRONTEND_URL}?oauth_error=google")
 
     email = normalize_email(user_info.get("email", ""))
@@ -573,6 +644,28 @@ def chat_detail(thread_id):
             (thread_id,),
         ).fetchall()
 
+        attachments = conn.execute(
+            """
+            SELECT id, message_id, filename, mime_type, size, created_at
+            FROM chat_message_attachments
+            WHERE thread_id = ?
+            ORDER BY id ASC
+            """,
+            (thread_id,),
+        ).fetchall()
+
+    attachments_by_message = {}
+    for row in attachments:
+        attachments_by_message.setdefault(row["message_id"], []).append(
+            {
+                "id": row["id"],
+                "filename": row["filename"],
+                "mime_type": row["mime_type"],
+                "size": row["size"],
+                "created_at": row["created_at"],
+            }
+        )
+
     return jsonify(
         {
             "thread": {
@@ -590,11 +683,30 @@ def chat_detail(thread_id):
                     "source": row["source"],
                     "response_id": row["response_id"],
                     "created_at": row["created_at"],
+                    "attachments": attachments_by_message.get(row["id"], []),
                 }
                 for row in messages
             ],
         }
     ), 200
+
+
+@app.route("/api/chats/<int:thread_id>/results", methods=["GET"])
+def chat_results(thread_id):
+    user_id = require_user_id()
+    if not user_id:
+        return jsonify({"error": "Unauthorized"}), 401
+
+    with get_chat_db_connection() as conn:
+        thread = conn.execute(
+            "SELECT id FROM chat_threads WHERE id = ? AND user_id = ?",
+            (thread_id, user_id),
+        ).fetchone()
+
+    if not thread:
+        return jsonify({"error": "Chat not found"}), 404
+
+    return jsonify(_load_results_table(thread_id)), 200
 
 
 @app.route("/api/chats/<int:thread_id>/messages", methods=["POST"])
@@ -606,10 +718,15 @@ def chat_messages(thread_id):
     data = request.get_json() or {}
     role = data.get("role")
     content = (data.get("content") or "").strip()
+    attachments = data.get("attachments") or []
     if role not in ("user", "assistant"):
         return jsonify({"error": "Role must be 'user' or 'assistant'"}), 400
     if not content:
         return jsonify({"error": "Content is required"}), 400
+    if attachments and not isinstance(attachments, list):
+        return jsonify({"error": "Attachments must be a list"}), 400
+    if isinstance(attachments, list) and len(attachments) > 6:
+        return jsonify({"error": "Too many attachments"}), 400
 
     with get_chat_db_connection() as conn:
         thread = conn.execute(
@@ -649,6 +766,33 @@ def chat_messages(thread_id):
             """,
             (content[:200], now, thread_id),
         )
+
+        allowed_types = {"image/png", "image/jpeg", "image/webp", "image/jpg"}
+        if attachments:
+            for attachment in attachments:
+                if not isinstance(attachment, dict):
+                    continue
+                filename = attachment.get("filename")
+                if not filename:
+                    continue
+                mime_type = attachment.get("mime_type")
+                if mime_type and mime_type not in allowed_types:
+                    continue
+                size = attachment.get("size")
+                conn.execute(
+                    """
+                    INSERT INTO chat_message_attachments (message_id, thread_id, filename, mime_type, size, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        cursor.lastrowid,
+                        thread_id,
+                        filename,
+                        mime_type,
+                        size,
+                        now,
+                    ),
+                )
         conn.commit()
 
     return jsonify({"id": cursor.lastrowid, "created_at": now}), 201

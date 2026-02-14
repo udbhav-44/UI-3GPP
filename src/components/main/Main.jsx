@@ -14,6 +14,11 @@ import { FaCloudUploadAlt, FaGoogleDrive } from "react-icons/fa";
 import { getApiBaseUrl } from "../../services/auth";
 import { getToken } from "../../services/authToken";
 import { listUploads, uploadFiles } from "../../services/uploads";
+import {
+	uploadChatImages,
+	deleteChatImage,
+	getChatImageUrl,
+} from "../../services/chatImages";
 
 const Main = ({ user }) => {
 	const {
@@ -64,12 +69,13 @@ const Main = ({ user }) => {
 	const agentDataRef = useRef(null);
 	const agent = useRef(true);
 	const pendingThreadIdRef = useRef(null);
-	const abortControllerRef = useRef(null);
 	const isProcessingRef = useRef(false);
 	const activeThreadIdRef = useRef(activeThreadId);
+	const prevThreadIdRef = useRef(activeThreadId);
+	const agentSocketRef = useRef(null);
+	const mainSocketRef = useRef(null);
 
 	const [markdownContent, setMarkdownContent] = useState('');
-	const [reccQs, setReccQs] = useState([])
 	const [isDocsEnabled, setIsDocsEnabled] = useState(false);
 	const [isWebToolsEnabled, setIsWebToolsEnabled] = useState(false);
 	const [isDropdownOpen, setIsDropdownOpen] = useState(false);
@@ -80,11 +86,15 @@ const Main = ({ user }) => {
 	const [feedbackComment, setFeedbackComment] = useState("");
 	const responseIdRef = useRef(null);
 	const [isProcessing, setIsProcessing] = useState(false);
+	const [pendingImages, setPendingImages] = useState([]);
 	const verboseLineRef = useRef(null);
 	const verboseContentRef = useRef(null);
 	const [verboseExpanded, setVerboseExpanded] = useState(false);
 	const [copiedMessageId, setCopiedMessageId] = useState(null);
 	const copiedMessageTimerRef = useRef(null);
+	const MAX_CHAT_IMAGES = 6;
+	const MAX_CHAT_IMAGE_BYTES = 10 * 1024 * 1024;
+	const CHAT_IMAGE_TYPES = new Set(["image/png", "image/jpeg", "image/webp", "image/jpg"]);
 	const MODEL_OPTIONS = {
 		openai: [
 			"gpt-4o-mini",
@@ -164,6 +174,24 @@ const Main = ({ user }) => {
 	const agentWsUrl = agentBaseUrl.endsWith("/agent-ws")
 		? agentBaseUrl
 		: `${agentBaseUrl}/agent-ws`;
+	const buildAgentSubscriptionPayload = (threadId) => {
+		const payload = threadId
+			? { type: "subscribe", thread_id: String(threadId) }
+			: { type: "unsubscribe" };
+		const token = getToken();
+		if (token) {
+			payload.auth_token = token;
+		}
+		payload.user_id = user?.id || user?.email || null;
+		return payload;
+	};
+	const sendAgentSubscription = (threadId) => {
+		const ws = agentSocketRef.current;
+		if (!ws || ws.readyState !== WebSocket.OPEN) {
+			return;
+		}
+		ws.send(JSON.stringify(buildAgentSubscriptionPayload(threadId)));
+	};
 
 	const generatePDF = () => {
 		// Send the raw Markdown content to the backend
@@ -231,6 +259,13 @@ const Main = ({ user }) => {
 	}, [activeThreadId]);
 
 	useEffect(() => {
+		if (prevThreadIdRef.current && prevThreadIdRef.current !== activeThreadId) {
+			clearPendingImages();
+		}
+		prevThreadIdRef.current = activeThreadId;
+	}, [activeThreadId]);
+
+	useEffect(() => {
 		if (!activeThreadId) {
 			isProcessingRef.current = false;
 			setIsProcessing(false);
@@ -242,6 +277,10 @@ const Main = ({ user }) => {
 	useEffect(() => {
 		activeThreadIdRef.current = activeThreadId;
 	}, [activeThreadId]);
+
+	useEffect(() => {
+		sendAgentSubscription(activeThreadId);
+	}, [activeThreadId, user]);
 
 	useEffect(() => {
 		if (!downloadData || !pendingThreadIdRef.current) {
@@ -274,8 +313,6 @@ const Main = ({ user }) => {
 	const displayName = user?.name || user?.email || "Researcher";
 	const shortName = displayName.split(" ")[0];
 	const displayEmail = user?.email || "";
-	const recommendedQuestions = reccQs.filter((question) => Boolean(question));
-	const hasRecommendations = recommendedQuestions.length > 0;
 	const lastAssistantIndex = useMemo(() => {
 		for (let i = chatMessages.length - 1; i >= 0; i -= 1) {
 			const role = (chatMessages[i]?.role || "assistant").toLowerCase();
@@ -333,9 +370,11 @@ const Main = ({ user }) => {
 
 	const handleClick = async () => {
 		const trimmedInput = input.trim();
-		if (!trimmedInput || isProcessingRef.current) {
+		if ((!trimmedInput && pendingImages.length === 0) || isProcessingRef.current) {
 			return;
 		}
+		const userContent = trimmedInput || "Shared an image.";
+		const queryText = trimmedInput || "Analyze the attached image(s) and respond.";
 		const historySnapshot = chatMessages.slice(-6).map((message) => ({
 			role: message.role,
 			content: message.content,
@@ -345,7 +384,8 @@ const Main = ({ user }) => {
 		setIsProcessing(true);
 		let threadId = activeThreadId;
 		if (!threadId) {
-			threadId = await createThread(trimmedInput.slice(0, 60));
+			const title = trimmedInput ? trimmedInput.slice(0, 60) : "Image chat";
+			threadId = await createThread(title);
 		}
 		if (!threadId) {
 			isProcessingRef.current = false;
@@ -358,28 +398,34 @@ const Main = ({ user }) => {
 		setShowResults(true);
 		setLoading(true);
 		setDownloadData(false);
-		setReccQs([]);
 		setFeedbackChoice(null);
 		setFeedbackStatus("idle");
 		setFeedbackComment("");
 		responseIdRef.current = `resp_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 		resp.current = true;
-		setRecentPrompt(trimmedInput);
+		setRecentPrompt(userContent);
 		if (chatNo == 0) {
-			setPrevPrompts(prev => [...prev, trimmedInput]);
+			setPrevPrompts(prev => [...prev, userContent]);
 		}
 		setChatNo(chatNo + 1);
 
+		const attachments = pendingImages.map((image) => ({
+			filename: image.filename,
+			mime_type: image.mime_type,
+			size: image.size,
+		}));
 		const userMessage = {
 			role: "user",
-			content: trimmedInput,
+			content: userContent,
+			attachments,
 			created_at: new Date().toISOString(),
 		};
 		appendMessage(threadId, userMessage);
 		persistMessage(threadId, userMessage);
 		pendingThreadIdRef.current = threadId;
+		clearPendingImages();
 
-		let query = trimmedInput;
+		let query = queryText;
 		if (socket && socket.readyState === WebSocket.OPEN) {
 				socket.send(JSON.stringify({
 					type: 'query',
@@ -390,30 +436,11 @@ const Main = ({ user }) => {
 					model: selectedModel,
 					provider: selectedProvider,
 					web_tools: isWebToolsEnabled,
+					auth_token: getToken(),
 					user_id: user?.id || user?.email || null,
+					images: attachments,
 				}));
 			}
-		try {
-			const controller = new AbortController();
-			abortControllerRef.current = controller;
-			await fetch(`${apiBaseUrl}/query`, {
-				method: 'POST',
-				headers: {
-					'Content-Type': 'application/json',
-				},
-				body: JSON.stringify({ query: trimmedInput, thread_id: threadId, response_id: responseIdRef.current }),
-				signal: controller.signal,
-			});
-
-			console.log('Query sent successfully!');
-
-		} catch (error) {
-			if (error.name === "AbortError") {
-				return;
-			}
-			console.error('Error sending query to backend:', error);
-			setLoading(false);
-		}
 	}
 
 	const handleAbort = () => {
@@ -426,12 +453,6 @@ const Main = ({ user }) => {
 		setLoading(false);
 		setDownloadData(false);
 		cancelRenderCycle();
-
-		const controller = abortControllerRef.current;
-		if (controller) {
-			controller.abort();
-			abortControllerRef.current = null;
-		}
 
 		const abortPayload = JSON.stringify({
 			type: "abort",
@@ -453,7 +474,6 @@ const Main = ({ user }) => {
 		}
 		isProcessingRef.current = false;
 		setIsProcessing(false);
-		abortControllerRef.current = null;
 	}, [downloadData]);
 
 	useEffect(() => {
@@ -585,13 +605,214 @@ const Main = ({ user }) => {
 		adjustHeight();
 	}, [input]);
 
+	const isImageFile = (file) => {
+		if (!file) {
+			return false;
+		}
+		if (CHAT_IMAGE_TYPES.has(file.type)) {
+			return true;
+		}
+		const name = String(file.name || "").toLowerCase();
+		return name.endsWith(".png") || name.endsWith(".jpg") || name.endsWith(".jpeg") || name.endsWith(".webp");
+	};
+
+	const ensureThreadForUpload = async () => {
+		if (activeThreadId) {
+			return activeThreadId;
+		}
+		const createdId = await createThread("New chat");
+		return createdId;
+	};
+
+	const clearPendingImages = () => {
+		setPendingImages((prev) => {
+			prev.forEach((item) => {
+				if (item?.previewUrl) {
+					URL.revokeObjectURL(item.previewUrl);
+				}
+			});
+			return [];
+		});
+	};
+
+	const handleImageFiles = async (files) => {
+		const entries = Array.from(files || []);
+		if (!entries.length) {
+			return;
+		}
+		const remainingSlots = Math.max(0, MAX_CHAT_IMAGES - pendingImages.length);
+		if (remainingSlots === 0) {
+			pushUploadNotice({
+				type: "warning",
+				title: "Image limit reached",
+				message: `You can attach up to ${MAX_CHAT_IMAGES} images.`,
+			});
+			return;
+		}
+		const imageEntries = entries.filter(isImageFile);
+		if (!imageEntries.length) {
+			return;
+		}
+		const validImages = [];
+		const rejected = [];
+		for (const file of imageEntries) {
+			if (file.size > MAX_CHAT_IMAGE_BYTES) {
+				rejected.push(file);
+				continue;
+			}
+			validImages.push(file);
+		}
+		if (!validImages.length) {
+			pushUploadNotice({
+				type: "error",
+				title: "Images too large",
+				message: "Each image must be 10MB or smaller.",
+			});
+			return;
+		}
+		const limitedImages = validImages.slice(0, remainingSlots);
+		const threadId = await ensureThreadForUpload();
+		if (!threadId) {
+			pushUploadNotice({
+				type: "error",
+				title: "Upload failed",
+				message: "We could not create a chat thread.",
+			});
+			return;
+		}
+		const results = await uploadChatImages(limitedImages, threadId);
+		const successes = [];
+		const failures = [];
+		results.forEach((entry) => {
+			if (entry.ok) {
+				const previewUrl = URL.createObjectURL(entry.file);
+				successes.push({
+					id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+					filename: entry.payload?.filename || entry.file.name,
+					mime_type: entry.file.type || entry.payload?.content_type || "",
+					size: entry.file.size,
+					previewUrl,
+				});
+			} else {
+				failures.push(entry.file);
+			}
+		});
+		if (successes.length) {
+			setPendingImages((prev) => [...prev, ...successes]);
+		}
+		const failCount = failures.length + Math.max(0, validImages.length - limitedImages.length) + rejected.length;
+		if (successes.length && !failCount) {
+			pushUploadNotice({
+				type: "success",
+				title: "Images attached",
+				message: `${successes.length} image${successes.length === 1 ? "" : "s"} ready.`,
+			});
+		} else if (successes.length) {
+			pushUploadNotice({
+				type: "warning",
+				title: "Partial image upload",
+				message: `${successes.length} added, ${failCount} skipped.`,
+			});
+		} else {
+			pushUploadNotice({
+				type: "error",
+				title: "Image upload failed",
+				message: "We could not upload those images.",
+			});
+		}
+	};
+
+	const handlePaste = async (event) => {
+		if (!event.clipboardData) {
+			return;
+		}
+		const items = Array.from(event.clipboardData.items || []);
+		const imageFiles = [];
+		for (const item of items) {
+			if (item.type && item.type.startsWith("image/")) {
+				const blob = item.getAsFile();
+				if (!blob) {
+					continue;
+				}
+				const ext = blob.type === "image/png"
+					? "png"
+					: blob.type === "image/webp"
+					? "webp"
+					: "jpg";
+				const name = `paste-${Date.now()}.${ext}`;
+				const file = new File([blob], name, { type: blob.type });
+				imageFiles.push(file);
+			}
+		}
+		if (imageFiles.length) {
+			event.preventDefault();
+			await handleImageFiles(imageFiles);
+		}
+	};
+
+	const removePendingImage = async (image) => {
+		if (!image) {
+			return;
+		}
+		if (image.previewUrl) {
+			URL.revokeObjectURL(image.previewUrl);
+		}
+		setPendingImages((prev) => prev.filter((item) => item.id !== image.id));
+		if (activeThreadId && image.filename) {
+			try {
+				await deleteChatImage(activeThreadId, image.filename);
+			} catch (error) {
+				console.error("Failed to delete image:", error);
+			}
+		}
+	};
+
+	const renderAttachments = (attachments) => {
+		if (!attachments || attachments.length === 0) {
+			return null;
+		}
+		return (
+			<div className="chat-attachments">
+				{attachments.map((attachment, index) => {
+					const filename = attachment?.filename;
+					const src = filename ? getChatImageUrl(activeThreadId, filename) : "";
+					if (!src) {
+						return null;
+					}
+					return (
+						<a
+							key={`${filename}-${index}`}
+							className="chat-attachment"
+							href={src}
+							target="_blank"
+							rel="noopener noreferrer"
+						>
+							<img src={src} alt={filename} loading="lazy" />
+						</a>
+					);
+				})}
+			</div>
+		);
+	};
+
 	const handleFileChange = async (event) => {
 		const files = event.target.files;
 		setEvenData(event);
 
 		if (files && files.length > 0) {
 			try {
-				const results = await uploadFiles(files);
+				const entries = Array.from(files);
+				const imageFiles = entries.filter(isImageFile);
+				const docFiles = entries.filter((file) => !isImageFile(file));
+				if (imageFiles.length) {
+					await handleImageFiles(imageFiles);
+				}
+				if (!docFiles.length) {
+					setIsDropdownOpen(false);
+					event.target.value = "";
+					return;
+				}
+				const results = await uploadFiles(docFiles);
 				const successCount = results.filter((entry) => entry.ok).length;
 				const failCount = results.length - successCount;
 
@@ -674,14 +895,35 @@ const Main = ({ user }) => {
 	}, [isDropdownOpen]);
 
 	useEffect(() => {
+		let ws = null;
+		let reconnectTimer = null;
+		let retryCount = 0;
+		let shouldReconnect = true;
 
-		try {
-			const ws = new WebSocket(agentWsUrl);
+		const scheduleReconnect = () => {
+			if (!shouldReconnect || reconnectTimer) {
+				return;
+			}
+			const delay = Math.min(10000, 500 * 2 ** retryCount);
+			reconnectTimer = setTimeout(() => {
+				reconnectTimer = null;
+				if (shouldReconnect) {
+					connect();
+				}
+			}, delay);
+			retryCount += 1;
+		};
+
+		const connect = () => {
+			ws = new WebSocket(agentWsUrl);
+			agentSocketRef.current = ws;
+			setSocket1(ws);
 
 			ws.onopen = () => {
 				console.log('WebSocket connected to agent server');
+				retryCount = 0;
 				setAgentWsStatus("connected");
-
+				sendAgentSubscription(activeThreadIdRef.current);
 			};
 			ws.onmessage = (event) => {
 				try {
@@ -722,31 +964,67 @@ const Main = ({ user }) => {
 			ws.onclose = () => {
 				console.log('WebSocket disconnected');
 				setAgentWsStatus("disconnected");
+				scheduleReconnect();
 			};
 			ws.onerror = () => {
 				setAgentWsStatus("error");
 			};
-			setSocket1(ws);
-			return () => {
+		};
+
+		connect();
+
+		return () => {
+			shouldReconnect = false;
+			if (reconnectTimer) {
+				clearTimeout(reconnectTimer);
+			}
+			if (ws) {
 				ws.close();
-			};
-		}
-		catch (error) {
-			console.error('Verbose WebSocket Server Not Connected', error);
-		}
-	}, []);
+			}
+		};
+	}, [agentWsUrl]);
 
 	useEffect(() => {
-		const ws = new WebSocket(mainWsUrl);
-		try {
+		let ws = null;
+		let reconnectTimer = null;
+		let retryCount = 0;
+		let shouldReconnect = true;
+
+		const scheduleReconnect = () => {
+			if (!shouldReconnect || reconnectTimer) {
+				return;
+			}
+			const delay = Math.min(10000, 500 * 2 ** retryCount);
+			reconnectTimer = setTimeout(() => {
+				reconnectTimer = null;
+				if (shouldReconnect) {
+					connect();
+				}
+			}, delay);
+			retryCount += 1;
+		};
+
+		const connect = () => {
+			ws = new WebSocket(mainWsUrl);
+			mainSocketRef.current = ws;
+			setSocket(ws);
+
 			ws.onopen = () => {
 				console.log('WebSocket connected');
+				retryCount = 0;
 				setMainWsStatus("connected");
 			};
 			ws.onmessage = (event) => {
 				try {
 					const data = JSON.parse(event.data);
 					// console.log(data);
+					const currentThreadId = activeThreadIdRef.current;
+					if (data.thread_id && currentThreadId && String(data.thread_id) !== String(currentThreadId)) {
+						return;
+					}
+					if (data.response_id && responseIdRef.current && data.response_id !== responseIdRef.current) {
+						return;
+					}
 					if (data.type === 'graph') {
 						if (!isProcessingRef.current) {
 							return;
@@ -765,10 +1043,6 @@ const Main = ({ user }) => {
 						console.log(data.response);
 						setMarkdownContent(data.response);
 					}
-					else if (data.type === 'questions') {
-						console.log(data.response);
-						setReccQs(data.response);
-					}
 				} catch (error) {
 					console.error('Error parsing WebSocket message:', error);
 				}
@@ -776,19 +1050,25 @@ const Main = ({ user }) => {
 			ws.onclose = () => {
 				console.log('WebSocket disconnected');
 				setMainWsStatus("disconnected");
+				scheduleReconnect();
 			};
 			ws.onerror = () => {
 				setMainWsStatus("error");
 			};
-			setSocket(ws);
-			return () => {
+		};
+
+		connect();
+
+		return () => {
+			shouldReconnect = false;
+			if (reconnectTimer) {
+				clearTimeout(reconnectTimer);
+			}
+			if (ws) {
 				ws.close();
-			};
-		}
-		catch (error) {
-			console.error('Main WebSocket Server Not Connected', error);
-		}
-	}, []);
+			}
+		};
+	}, [mainWsUrl]);
 
 	return (
 
@@ -917,7 +1197,10 @@ const Main = ({ user }) => {
 												/>
 												<div className={`chat-bubble ${role}`}>
 													{role === "user" ? (
-														<p className="chat-bubble__text">{message.content}</p>
+														<>
+															<p className="chat-bubble__text">{message.content}</p>
+															{renderAttachments(message.attachments)}
+														</>
 													) : (
 														<ReactMarkdown
 															rehypePlugins={[rehypeRaw, [rehypeKatex, { throwOnError: false, strict: "ignore" }]]}
@@ -933,6 +1216,7 @@ const Main = ({ user }) => {
 															{message.content}
 														</ReactMarkdown>
 													)}
+													{role !== "user" && renderAttachments(message.attachments)}
 												</div>
 											</div>
 											{role === "assistant" && (
@@ -1130,58 +1414,65 @@ const Main = ({ user }) => {
 								)
 							)}
 
-							{hasRecommendations && (
-								<>
-									<h1 className="result-data" style={{ marginBottom: '10px' }}>Recommended Questions</h1>
-									<div className="result-data recommendations" ref={agentDataRef}>
-										{recommendedQuestions.slice(0, 3).map((question, index) => (
-											<div
-												key={`${question.slice(0, 24)}-${index}`}
-												className="card recommendation-card"
-												onClick={() => handleCardClick(question)}
-											>
-												<p className="recommendation-text">{question}</p>
-											</div>
-										))}
-									</div>
-								</>
-							)}
 						</div>
 					)}
 				</div>
 				<div className="main-bottom">
 					<div className="search-box">
-						<textarea
-							ref={textAreaRef}
-							onChange={(e) => setInput(e.target.value)}
-							value={input}
-							placeholder="Ask about meetings, releases, specs, or upload docs..."
-							rows={1} // Start with 1 row
-							className="search-input"
-						/>
-						<div className="button-container" ref={buttonContainerRef}>
-							<img
-								src={assets.attach_icon}
-								className="upload"
-								onClick={!isProcessing ? toggleDropdown : null}
-								alt=""
+						{pendingImages.length > 0 && (
+							<div className="pending-images">
+								{pendingImages.map((image) => (
+									<div className="pending-image" key={image.id}>
+										<img src={image.previewUrl} alt={image.filename} />
+										<button
+											type="button"
+											className="pending-image__remove"
+											onClick={() => removePendingImage(image)}
+											aria-label="Remove image"
+										>
+											×
+										</button>
+									</div>
+								))}
+								<div className="pending-image__meta">
+									{pendingImages.length}/{MAX_CHAT_IMAGES} images
+								</div>
+							</div>
+						)}
+						<div className="search-input-row">
+							<textarea
+								ref={textAreaRef}
+								onChange={(e) => setInput(e.target.value)}
+								onPaste={handlePaste}
+								value={input}
+								placeholder="Ask about meetings, releases, specs, or upload docs..."
+								rows={1} // Start with 1 row
+								className="search-input"
 							/>
-							{isProcessing ? (
-								<button
-									type="button"
-									className="stop-button"
-									onClick={handleAbort}
-									aria-label="Stop generating"
-								>
-									<span className="stop-icon" aria-hidden="true" />
-								</button>
-							) : (
+							<div className="button-container" ref={buttonContainerRef}>
 								<img
-									src={assets.send_icon}
+									src={assets.attach_icon}
+									className="upload"
+									onClick={!isProcessing ? toggleDropdown : null}
 									alt=""
-									onClick={!isProcessing ? handleClick : null}
 								/>
-							)}
+								{isProcessing ? (
+									<button
+										type="button"
+										className="stop-button"
+										onClick={handleAbort}
+										aria-label="Stop generating"
+									>
+										<span className="stop-icon" aria-hidden="true" />
+									</button>
+								) : (
+									<img
+										src={assets.send_icon}
+										alt=""
+										onClick={!isProcessing ? handleClick : null}
+									/>
+								)}
+							</div>
 						</div>
 					</div>
 					<div className="bottom-info">
@@ -1221,6 +1512,7 @@ const Main = ({ user }) => {
 								multiple
 								id="hiddenFileInput"
 								type="file"
+								accept=".pdf,.doc,.docx,.txt,.png,.jpg,.jpeg,.webp"
 								style={{ display: "none" }}
 								onChange={handleFileChange}
 							/>

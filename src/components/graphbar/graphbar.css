@@ -172,6 +172,15 @@
   position: absolute;
   pointer-events: none;
   max-width: 280px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(15, 23, 42, 0.35);
+  background: #f8fafc;
+  color: #0f172a;
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.35);
+  font-size: 0.85rem;
+  line-height: 1.4;
+  z-index: 10;
 }
 
 .graph-render{

@@ -371,10 +371,6 @@ const GraphBar = ({ isOpen, onToggle, offset = 0, drawerWidth = 420, onResize })
                             style={{
                                 top: popupData.position.y + 10, // Offset from click
                                 left: popupData.position.x + 10,
-                                color: "black",
-                                padding: "15px",
-                                zIndex: 1000,
-                                backgroundColor: '#e6f3ff',
                             }}
                         >
                             <div className="details">

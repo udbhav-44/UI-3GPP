@@ -14,6 +14,8 @@ const Login = ({ onAuthSuccess, checking = false }) => {
   const [status, setStatus] = useState({ type: "", message: "" });
   const [resetLink, setResetLink] = useState("");
   const [loading, setLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [form, setForm] = useState({
     name: "",
     email: "",
@@ -253,16 +255,41 @@ const Login = ({ onAuthSuccess, checking = false }) => {
               </label>
               <label className="login-field">
                 <span>Password</span>
-                <input
-                  type="password"
-                  name="password"
-                  placeholder="********"
-                  autoComplete="current-password"
-                  value={form.password}
-                  onChange={handleFieldChange}
-                  required
-                  disabled={isBusy}
-                />
+                <div className="password-field">
+                  <input
+                    type={showPassword ? "text" : "password"}
+                    name="password"
+                    placeholder="********"
+                    autoComplete="current-password"
+                    value={form.password}
+                    onChange={handleFieldChange}
+                    required
+                    disabled={isBusy}
+                  />
+                  <button
+                    type="button"
+                    className="password-toggle"
+                    onClick={() => setShowPassword((prev) => !prev)}
+                    disabled={isBusy}
+                    aria-label={showPassword ? "Hide password" : "Show password"}
+                  >
+                    {showPassword ? (
+                      <svg viewBox="0 0 24 24" aria-hidden="true">
+                        <path
+                          d="M4.2 4.2a1 1 0 0 1 1.4 0l14.2 14.2a1 1 0 1 1-1.4 1.4l-2.3-2.3A11.7 11.7 0 0 1 12 19C6 19 2.4 14.5 1.2 12a11.6 11.6 0 0 1 4-4.8L4.2 5.6a1 1 0 0 1 0-1.4Zm6 6a2 2 0 0 0 2.6 2.6l-2.6-2.6Zm3.1 6.5-1.7-1.7a4 4 0 0 1-5.3-5.3L4.8 8a9.4 9.4 0 0 0-2.4 4c1 2 4 6 9.6 6 1.2 0 2.3-.2 3.3-.5Zm-1.3-9.6 3.7 3.7a4 4 0 0 0-4-4c-.5 0-1 .1-1.4.3l1.7 1.7Z"
+                          fill="currentColor"
+                        />
+                      </svg>
+                    ) : (
+                      <svg viewBox="0 0 24 24" aria-hidden="true">
+                        <path
+                          d="M12 5c6 0 9.6 4.5 10.8 7-1.2 2.5-4.8 7-10.8 7S2.4 14.5 1.2 12C2.4 9.5 6 5 12 5Zm0 2C7.5 7 4.6 10.3 3.4 12 4.6 13.7 7.5 17 12 17s7.4-3.3 8.6-5c-1.2-1.7-4.1-5-8.6-5Zm0 2.5a2.5 2.5 0 1 1 0 5 2.5 2.5 0 0 1 0-5Z"
+                          fill="currentColor"
+                        />
+                      </svg>
+                    )}
+                  </button>
+                </div>
               </label>
               <div className="login-actions">
                 <button
@@ -308,27 +335,77 @@ const Login = ({ onAuthSuccess, checking = false }) => {
               </label>
               <label className="login-field">
                 <span>Password</span>
-                <input
-                  type="password"
-                  name="password"
-                  placeholder="********"
-                  value={form.password}
-                  onChange={handleFieldChange}
-                  required
-                  disabled={isBusy}
-                />
+                <div className="password-field">
+                  <input
+                    type={showPassword ? "text" : "password"}
+                    name="password"
+                    placeholder="********"
+                    value={form.password}
+                    onChange={handleFieldChange}
+                    required
+                    disabled={isBusy}
+                  />
+                  <button
+                    type="button"
+                    className="password-toggle"
+                    onClick={() => setShowPassword((prev) => !prev)}
+                    disabled={isBusy}
+                    aria-label={showPassword ? "Hide password" : "Show password"}
+                  >
+                    {showPassword ? (
+                      <svg viewBox="0 0 24 24" aria-hidden="true">
+                        <path
+                          d="M4.2 4.2a1 1 0 0 1 1.4 0l14.2 14.2a1 1 0 1 1-1.4 1.4l-2.3-2.3A11.7 11.7 0 0 1 12 19C6 19 2.4 14.5 1.2 12a11.6 11.6 0 0 1 4-4.8L4.2 5.6a1 1 0 0 1 0-1.4Zm6 6a2 2 0 0 0 2.6 2.6l-2.6-2.6Zm3.1 6.5-1.7-1.7a4 4 0 0 1-5.3-5.3L4.8 8a9.4 9.4 0 0 0-2.4 4c1 2 4 6 9.6 6 1.2 0 2.3-.2 3.3-.5Zm-1.3-9.6 3.7 3.7a4 4 0 0 0-4-4c-.5 0-1 .1-1.4.3l1.7 1.7Z"
+                          fill="currentColor"
+                        />
+                      </svg>
+                    ) : (
+                      <svg viewBox="0 0 24 24" aria-hidden="true">
+                        <path
+                          d="M12 5c6 0 9.6 4.5 10.8 7-1.2 2.5-4.8 7-10.8 7S2.4 14.5 1.2 12C2.4 9.5 6 5 12 5Zm0 2C7.5 7 4.6 10.3 3.4 12 4.6 13.7 7.5 17 12 17s7.4-3.3 8.6-5c-1.2-1.7-4.1-5-8.6-5Zm0 2.5a2.5 2.5 0 1 1 0 5 2.5 2.5 0 0 1 0-5Z"
+                          fill="currentColor"
+                        />
+                      </svg>
+                    )}
+                  </button>
+                </div>
               </label>
               <label className="login-field">
                 <span>Confirm password</span>
-                <input
-                  type="password"
-                  name="confirmPassword"
-                  placeholder="********"
-                  value={form.confirmPassword}
-                  onChange={handleFieldChange}
-                  required
-                  disabled={isBusy}
-                />
+                <div className="password-field">
+                  <input
+                    type={showConfirmPassword ? "text" : "password"}
+                    name="confirmPassword"
+                    placeholder="********"
+                    value={form.confirmPassword}
+                    onChange={handleFieldChange}
+                    required
+                    disabled={isBusy}
+                  />
+                  <button
+                    type="button"
+                    className="password-toggle"
+                    onClick={() => setShowConfirmPassword((prev) => !prev)}
+                    disabled={isBusy}
+                    aria-label={showConfirmPassword ? "Hide password" : "Show password"}
+                  >
+                    {showConfirmPassword ? (
+                      <svg viewBox="0 0 24 24" aria-hidden="true">
+                        <path
+                          d="M4.2 4.2a1 1 0 0 1 1.4 0l14.2 14.2a1 1 0 1 1-1.4 1.4l-2.3-2.3A11.7 11.7 0 0 1 12 19C6 19 2.4 14.5 1.2 12a11.6 11.6 0 0 1 4-4.8L4.2 5.6a1 1 0 0 1 0-1.4Zm6 6a2 2 0 0 0 2.6 2.6l-2.6-2.6Zm3.1 6.5-1.7-1.7a4 4 0 0 1-5.3-5.3L4.8 8a9.4 9.4 0 0 0-2.4 4c1 2 4 6 9.6 6 1.2 0 2.3-.2 3.3-.5Zm-1.3-9.6 3.7 3.7a4 4 0 0 0-4-4c-.5 0-1 .1-1.4.3l1.7 1.7Z"
+                          fill="currentColor"
+                        />
+                      </svg>
+                    ) : (
+                      <svg viewBox="0 0 24 24" aria-hidden="true">
+                        <path
+                          d="M12 5c6 0 9.6 4.5 10.8 7-1.2 2.5-4.8 7-10.8 7S2.4 14.5 1.2 12C2.4 9.5 6 5 12 5Zm0 2C7.5 7 4.6 10.3 3.4 12 4.6 13.7 7.5 17 12 17s7.4-3.3 8.6-5c-1.2-1.7-4.1-5-8.6-5Zm0 2.5a2.5 2.5 0 1 1 0 5 2.5 2.5 0 0 1 0-5Z"
+                          fill="currentColor"
+                        />
+                      </svg>
+                    )}
+                  </button>
+                </div>
               </label>
               <button className="login-submit" type="submit" disabled={isBusy}>
                 Create account
@@ -392,27 +469,77 @@ const Login = ({ onAuthSuccess, checking = false }) => {
               </label>
               <label className="login-field">
                 <span>New password</span>
-                <input
-                  type="password"
-                  name="password"
-                  placeholder="********"
-                  value={form.password}
-                  onChange={handleFieldChange}
-                  required
-                  disabled={isBusy}
-                />
+                <div className="password-field">
+                  <input
+                    type={showPassword ? "text" : "password"}
+                    name="password"
+                    placeholder="********"
+                    value={form.password}
+                    onChange={handleFieldChange}
+                    required
+                    disabled={isBusy}
+                  />
+                  <button
+                    type="button"
+                    className="password-toggle"
+                    onClick={() => setShowPassword((prev) => !prev)}
+                    disabled={isBusy}
+                    aria-label={showPassword ? "Hide password" : "Show password"}
+                  >
+                    {showPassword ? (
+                      <svg viewBox="0 0 24 24" aria-hidden="true">
+                        <path
+                          d="M4.2 4.2a1 1 0 0 1 1.4 0l14.2 14.2a1 1 0 1 1-1.4 1.4l-2.3-2.3A11.7 11.7 0 0 1 12 19C6 19 2.4 14.5 1.2 12a11.6 11.6 0 0 1 4-4.8L4.2 5.6a1 1 0 0 1 0-1.4Zm6 6a2 2 0 0 0 2.6 2.6l-2.6-2.6Zm3.1 6.5-1.7-1.7a4 4 0 0 1-5.3-5.3L4.8 8a9.4 9.4 0 0 0-2.4 4c1 2 4 6 9.6 6 1.2 0 2.3-.2 3.3-.5Zm-1.3-9.6 3.7 3.7a4 4 0 0 0-4-4c-.5 0-1 .1-1.4.3l1.7 1.7Z"
+                          fill="currentColor"
+                        />
+                      </svg>
+                    ) : (
+                      <svg viewBox="0 0 24 24" aria-hidden="true">
+                        <path
+                          d="M12 5c6 0 9.6 4.5 10.8 7-1.2 2.5-4.8 7-10.8 7S2.4 14.5 1.2 12C2.4 9.5 6 5 12 5Zm0 2C7.5 7 4.6 10.3 3.4 12 4.6 13.7 7.5 17 12 17s7.4-3.3 8.6-5c-1.2-1.7-4.1-5-8.6-5Zm0 2.5a2.5 2.5 0 1 1 0 5 2.5 2.5 0 0 1 0-5Z"
+                          fill="currentColor"
+                        />
+                      </svg>
+                    )}
+                  </button>
+                </div>
               </label>
               <label className="login-field">
                 <span>Confirm password</span>
-                <input
-                  type="password"
-                  name="confirmPassword"
-                  placeholder="********"
-                  value={form.confirmPassword}
-                  onChange={handleFieldChange}
-                  required
-                  disabled={isBusy}
-                />
+                <div className="password-field">
+                  <input
+                    type={showConfirmPassword ? "text" : "password"}
+                    name="confirmPassword"
+                    placeholder="********"
+                    value={form.confirmPassword}
+                    onChange={handleFieldChange}
+                    required
+                    disabled={isBusy}
+                  />
+                  <button
+                    type="button"
+                    className="password-toggle"
+                    onClick={() => setShowConfirmPassword((prev) => !prev)}
+                    disabled={isBusy}
+                    aria-label={showConfirmPassword ? "Hide password" : "Show password"}
+                  >
+                    {showConfirmPassword ? (
+                      <svg viewBox="0 0 24 24" aria-hidden="true">
+                        <path
+                          d="M4.2 4.2a1 1 0 0 1 1.4 0l14.2 14.2a1 1 0 1 1-1.4 1.4l-2.3-2.3A11.7 11.7 0 0 1 12 19C6 19 2.4 14.5 1.2 12a11.6 11.6 0 0 1 4-4.8L4.2 5.6a1 1 0 0 1 0-1.4Zm6 6a2 2 0 0 0 2.6 2.6l-2.6-2.6Zm3.1 6.5-1.7-1.7a4 4 0 0 1-5.3-5.3L4.8 8a9.4 9.4 0 0 0-2.4 4c1 2 4 6 9.6 6 1.2 0 2.3-.2 3.3-.5Zm-1.3-9.6 3.7 3.7a4 4 0 0 0-4-4c-.5 0-1 .1-1.4.3l1.7 1.7Z"
+                          fill="currentColor"
+                        />
+                      </svg>
+                    ) : (
+                      <svg viewBox="0 0 24 24" aria-hidden="true">
+                        <path
+                          d="M12 5c6 0 9.6 4.5 10.8 7-1.2 2.5-4.8 7-10.8 7S2.4 14.5 1.2 12C2.4 9.5 6 5 12 5Zm0 2C7.5 7 4.6 10.3 3.4 12 4.6 13.7 7.5 17 12 17s7.4-3.3 8.6-5c-1.2-1.7-4.1-5-8.6-5Zm0 2.5a2.5 2.5 0 1 1 0 5 2.5 2.5 0 0 1 0-5Z"
+                          fill="currentColor"
+                        />
+                      </svg>
+                    )}
+                  </button>
+                </div>
               </label>
               <button className="login-submit" type="submit" disabled={isBusy}>
                 Update password

@@ -1,6 +1,13 @@
 import { createContext, useState, useRef, useEffect } from "react";
 import runChat from "../config/Gemini";
-import { addChatMessage, createChat, getChat, listChats, deleteChat } from "../services/chat";
+import {
+	addChatMessage,
+	createChat,
+	getChat,
+	getChatResults,
+	listChats,
+	deleteChat
+} from "../services/chat";
 
 export const Context = createContext();
 
@@ -135,6 +142,23 @@ const ContextProvider = (props) => {
 		pendingDataRef.current = [];
 	};
 
+	const loadThreadResults = async (threadId) => {
+		if (!threadId) {
+			return;
+		}
+		try {
+			const data = await getChatResults(threadId);
+			const columns = Array.isArray(data?.columns) ? data.columns.filter(Boolean) : [];
+			const rows = Array.isArray(data?.rows) ? data.rows : [];
+			setResultsTable({ columns, rows }, threadId);
+			if (Object.prototype.hasOwnProperty.call(data || {}, "updated_at")) {
+				setResultsUpdatedAt(data.updated_at, threadId);
+			}
+		} catch (error) {
+			console.error("Failed to load results table:", error);
+		}
+	};
+
 	const selectThread = async (threadId, { persist = true } = {}) => {
 		try {
 			const data = await getChat(threadId);
@@ -144,6 +168,7 @@ const ContextProvider = (props) => {
 			setDownloadData(false);
 			setResultData("");
 			setAgentData("");
+			await loadThreadResults(data.thread.id);
 			if (persist) {
 				localStorage.setItem("ui3gpp_active_thread", String(data.thread.id));
 			}
