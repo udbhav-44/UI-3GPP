@@ -92,6 +92,10 @@ const Main = ({ user }) => {
 	const [verboseExpanded, setVerboseExpanded] = useState(false);
 	const [copiedMessageId, setCopiedMessageId] = useState(null);
 	const copiedMessageTimerRef = useRef(null);
+	const requestStartRef = useRef(0);
+	const firstTokenReceivedRef = useRef(false);
+	const [ttftMs, setTtftMs] = useState(null);
+	const [ttftLiveMs, setTtftLiveMs] = useState(null);
 	const MAX_CHAT_IMAGES = 6;
 	const MAX_CHAT_IMAGE_BYTES = 10 * 1024 * 1024;
 	const CHAT_IMAGE_TYPES = new Set(["image/png", "image/jpeg", "image/webp", "image/jpg"]);
@@ -118,6 +122,41 @@ const Main = ({ user }) => {
 			setSelectedModel(options[0] || "");
 		}
 	}, [selectedProvider]);
+
+	const nowMs = () =>
+		(typeof performance !== "undefined" && typeof performance.now === "function"
+			? performance.now()
+			: Date.now());
+	const formatLatency = (value) => {
+		if (!Number.isFinite(value) || value < 0) {
+			return "--";
+		}
+		if (value < 1000) {
+			return `${Math.round(value)} ms`;
+		}
+		return `${(value / 1000).toFixed(2)} s`;
+	};
+	const resetTtftState = () => {
+		requestStartRef.current = 0;
+		firstTokenReceivedRef.current = false;
+		setTtftMs(null);
+		setTtftLiveMs(null);
+	};
+	const beginTtftTracking = () => {
+		requestStartRef.current = nowMs();
+		firstTokenReceivedRef.current = false;
+		setTtftMs(null);
+		setTtftLiveMs(0);
+	};
+	const captureFirstToken = () => {
+		if (firstTokenReceivedRef.current || !requestStartRef.current) {
+			return;
+		}
+		firstTokenReceivedRef.current = true;
+		const elapsed = Math.max(0, Math.round(nowMs() - requestStartRef.current));
+		setTtftMs(elapsed);
+		setTtftLiveMs(elapsed);
+	};
 
 	const ToggleSwitch = ({ label, checked, onToggle }) => {
 		return (
@@ -256,6 +295,7 @@ const Main = ({ user }) => {
 		setFeedbackChoice(null);
 		setFeedbackStatus("idle");
 		setCopiedMessageId(null);
+		resetTtftState();
 	}, [activeThreadId]);
 
 	useEffect(() => {
@@ -298,12 +338,15 @@ const Main = ({ user }) => {
 			response_id: responseIdRef.current,
 			created_at: new Date().toISOString(),
 		};
+		if (Number.isFinite(ttftMs) && ttftMs >= 0) {
+			assistantMessage.ttft_ms = ttftMs;
+		}
 		appendMessage(threadId, assistantMessage);
 		persistMessage(threadId, assistantMessage);
 		pendingThreadIdRef.current = null;
 		setResultData("");
 		setAgentData("");
-	}, [downloadData, markdownContent, agentData, resultData, appendMessage, persistMessage, setResultData, setAgentData]);
+	}, [downloadData, markdownContent, agentData, resultData, appendMessage, persistMessage, setResultData, setAgentData, ttftMs]);
 
 
 	const handleCardClick = (promptText) => {
@@ -367,6 +410,9 @@ const Main = ({ user }) => {
 			? "agent"
 			: (lastAssistantMessage?.source || "main");
 	const canShowFeedback = showResults && !loading && Boolean(feedbackAnswerText);
+	const ttftValue = ttftMs ?? ttftLiveMs;
+	const ttftLabel = Number.isFinite(ttftValue) ? formatLatency(ttftValue) : null;
+	const loadingTimingLabel = ttftLabel ? `Thinking for ${ttftLabel}` : null;
 
 	const handleClick = async () => {
 		const trimmedInput = input.trim();
@@ -427,20 +473,21 @@ const Main = ({ user }) => {
 
 		let query = queryText;
 		if (socket && socket.readyState === WebSocket.OPEN) {
-				socket.send(JSON.stringify({
-					type: 'query',
-					query,
-					thread_id: threadId,
-					history: historySnapshot,
-					response_id: responseIdRef.current,
-					model: selectedModel,
-					provider: selectedProvider,
-					web_tools: isWebToolsEnabled,
-					auth_token: getToken(),
-					user_id: user?.id || user?.email || null,
-					images: attachments,
-				}));
-			}
+			beginTtftTracking();
+			socket.send(JSON.stringify({
+				type: 'query',
+				query,
+				thread_id: threadId,
+				history: historySnapshot,
+				response_id: responseIdRef.current,
+				model: selectedModel,
+				provider: selectedProvider,
+				web_tools: isWebToolsEnabled,
+				auth_token: getToken(),
+				user_id: user?.id || user?.email || null,
+				images: attachments,
+			}));
+		}
 	}
 
 	const handleAbort = () => {
@@ -453,6 +500,7 @@ const Main = ({ user }) => {
 		setLoading(false);
 		setDownloadData(false);
 		cancelRenderCycle();
+		resetTtftState();
 
 		const abortPayload = JSON.stringify({
 			type: "abort",
@@ -475,6 +523,16 @@ const Main = ({ user }) => {
 		isProcessingRef.current = false;
 		setIsProcessing(false);
 	}, [downloadData]);
+
+	useEffect(() => {
+		if (!isProcessing || ttftMs !== null || !requestStartRef.current) {
+			return;
+		}
+		const interval = setInterval(() => {
+			setTtftLiveMs(Math.max(0, Math.round(nowMs() - requestStartRef.current)));
+		}, 100);
+		return () => clearInterval(interval);
+	}, [isProcessing, ttftMs]);
 
 	useEffect(() => {
 		if (verboseLineRef.current) {
@@ -941,6 +999,9 @@ const Main = ({ user }) => {
 						if (!isProcessingRef.current) {
 							return;
 						}
+						if (data.response && String(data.response).trim()) {
+							captureFirstToken();
+						}
 						setAgentData(prev => prev + data.response);  // ensure UI updates
 						setMarkdownContent(prev => prev + data.response);
 					}
@@ -1019,30 +1080,31 @@ const Main = ({ user }) => {
 					const data = JSON.parse(event.data);
 					// console.log(data);
 					const currentThreadId = activeThreadIdRef.current;
-					if (data.thread_id && currentThreadId && String(data.thread_id) !== String(currentThreadId)) {
-						return;
-					}
-					if (data.response_id && responseIdRef.current && data.response_id !== responseIdRef.current) {
-						return;
-					}
-					if (data.type === 'graph') {
-						if (!isProcessingRef.current) {
-							return;
-						}
+                    if (data.thread_id && currentThreadId && String(data.thread_id) !== String(currentThreadId)) {
+                        return;
+                    }
+                    if (data.response_id && responseIdRef.current && data.response_id !== responseIdRef.current) {
+                        return;
+                    }
+                    if (data.type === 'graph') {
+                        if (!isProcessingRef.current) {
+                            return;
+                        }
 
-						const graph = JSON.parse(data.response);
-						console.log(graph);
-						setGraphData(graph);
+                        const graph = JSON.parse(data.response);
+                        console.log(graph);
+                        setGraphData(graph);
 
-					} else if (data.type === 'response') {
-						if (!isProcessingRef.current) {
-							return;
-						}
-						agent.current = false;
-						onRender(data.response);
-						console.log(data.response);
-						setMarkdownContent(data.response);
-					}
+                    } else if (data.type === 'response') {
+                        if (!isProcessingRef.current) {
+                            return;
+                        }
+                        captureFirstToken();
+                        agent.current = false;
+                        onRender(data.response);
+                        console.log(data.response);
+                        setMarkdownContent(data.response);
+                    }
 				} catch (error) {
 					console.error('Error parsing WebSocket message:', error);
 				}
@@ -1187,6 +1249,8 @@ const Main = ({ user }) => {
 									const messageKey = message.id || `${role}-${index}`;
 									const isAssistantCopied = copiedMessageId === messageKey;
 									const isLastAssistant = role === "assistant" && index === lastAssistantIndex;
+									const messageTtft = Number(message.ttft_ms);
+									const hasMessageTtft = Number.isFinite(messageTtft) && messageTtft >= 0;
 									return (
 										<React.Fragment key={messageKey}>
 											<div className={`chat-row ${role}`}>
@@ -1219,69 +1283,78 @@ const Main = ({ user }) => {
 													{role !== "user" && renderAttachments(message.attachments)}
 												</div>
 											</div>
-											{role === "assistant" && (
-												<div className="chat-row chat-actions-row">
-													<div className="chat-actions">
-														<button
-															type="button"
-															className="feedback-button copy"
-															onClick={() => handleCopyMessage(message.content, messageKey)}
-															title="Copy answer"
-															aria-label="Copy answer"
-														>
-															{isAssistantCopied ? (
-																<svg viewBox="0 0 24 24" aria-hidden="true">
-																	<path
-																		fill="currentColor"
-																		d="M9 16.17l-3.88-3.88L3.7 13.7 9 19l12-12-1.41-1.41z"
-																	/>
-																</svg>
-															) : (
-																<svg viewBox="0 0 24 24" aria-hidden="true">
-																	<path
-																		fill="currentColor"
-																		d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"
-																	/>
-																</svg>
-															)}
-														</button>
-														{canShowFeedback && isLastAssistant && (
-															<>
-																<button
-																	type="button"
-																	className={`feedback-button up ${feedbackChoice === "up" ? "active" : ""}`}
-																	onClick={() => handleFeedback("up")}
-																	disabled={feedbackStatus === "sending"}
-																	title="Thumbs up"
-																	aria-label="Thumbs up"
-																>
-																	<svg viewBox="0 0 24 24" aria-hidden="true">
-																		<path
-																			fill="currentColor"
-																			d="M2 21h4V9H2v12zm20-11c0-1.1-.9-2-2-2h-6.3l1-4.6.03-.32c0-.41-.17-.79-.44-1.06L13 1 7.6 6.4C7.22 6.78 7 7.3 7 7.83V19c0 1.1.9 2 2 2h7c.82 0 1.54-.5 1.84-1.22l3-7.05c.1-.23.16-.48.16-.73V10z"
-																		/>
-																	</svg>
-																</button>
-																<button
-																	type="button"
-																	className={`feedback-button down ${feedbackChoice === "down" ? "active" : ""}`}
-																	onClick={() => handleFeedback("down")}
-																	disabled={feedbackStatus === "sending"}
-																	title="Thumbs down"
-																	aria-label="Thumbs down"
-																>
-																	<svg viewBox="0 0 24 24" aria-hidden="true">
-																		<path
-																			fill="currentColor"
-																			d="M22 3h-4v12h4V3zM2 14c0 1.1.9 2 2 2h6.3l-1 4.6-.03.32c0 .41.17.79.44 1.06L11 23l5.4-5.4c.38-.38.6-.9.6-1.43V5c0-1.1-.9-2-2-2H8c-.82 0-1.54.5-1.84 1.22l-3 7.05c-.1.23-.16.48-.16.73V14z"
-																		/>
-																	</svg>
-																</button>
-															</>
+												{role === "assistant" && (
+													<>
+														{hasMessageTtft && (
+															<div className="chat-row chat-timing-row">
+																<span className="chat-timing" title="Time to first response token">
+																	Thought for {formatLatency(messageTtft)}
+																</span>
+															</div>
 														)}
-													</div>
-												</div>
-											)}
+														<div className="chat-row chat-actions-row">
+															<div className="chat-actions">
+																<button
+																	type="button"
+																	className="feedback-button copy"
+																	onClick={() => handleCopyMessage(message.content, messageKey)}
+																	title="Copy answer"
+																	aria-label="Copy answer"
+																>
+																	{isAssistantCopied ? (
+																		<svg viewBox="0 0 24 24" aria-hidden="true">
+																			<path
+																				fill="currentColor"
+																				d="M9 16.17l-3.88-3.88L3.7 13.7 9 19l12-12-1.41-1.41z"
+																			/>
+																		</svg>
+																	) : (
+																		<svg viewBox="0 0 24 24" aria-hidden="true">
+																			<path
+																				fill="currentColor"
+																				d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"
+																			/>
+																		</svg>
+																	)}
+																</button>
+																{canShowFeedback && isLastAssistant && (
+																	<>
+																		<button
+																			type="button"
+																			className={`feedback-button up ${feedbackChoice === "up" ? "active" : ""}`}
+																			onClick={() => handleFeedback("up")}
+																			disabled={feedbackStatus === "sending"}
+																			title="Thumbs up"
+																			aria-label="Thumbs up"
+																		>
+																			<svg viewBox="0 0 24 24" aria-hidden="true">
+																				<path
+																					fill="currentColor"
+																					d="M2 21h4V9H2v12zm20-11c0-1.1-.9-2-2-2h-6.3l1-4.6.03-.32c0-.41-.17-.79-.44-1.06L13 1 7.6 6.4C7.22 6.78 7 7.3 7 7.83V19c0 1.1.9 2 2 2h7c.82 0 1.54-.5 1.84-1.22l3-7.05c.1-.23.16-.48.16-.73V10z"
+																				/>
+																			</svg>
+																		</button>
+																		<button
+																			type="button"
+																			className={`feedback-button down ${feedbackChoice === "down" ? "active" : ""}`}
+																			onClick={() => handleFeedback("down")}
+																			disabled={feedbackStatus === "sending"}
+																			title="Thumbs down"
+																			aria-label="Thumbs down"
+																		>
+																			<svg viewBox="0 0 24 24" aria-hidden="true">
+																				<path
+																					fill="currentColor"
+																					d="M22 3h-4v12h4V3zM2 14c0 1.1.9 2 2 2h6.3l-1 4.6-.03.32c0 .41.17.79.44 1.06L11 23l5.4-5.4c.38-.38.6-.9.6-1.43V5c0-1.1-.9-2-2-2H8c-.82 0-1.54.5-1.84 1.22l-3 7.05c-.1.23-.16.48-.16.73V14z"
+																				/>
+																			</svg>
+																		</button>
+																	</>
+																)}
+															</div>
+														</div>
+													</>
+												)}
 										</React.Fragment>
 									);
 								})}
@@ -1295,6 +1368,9 @@ const Main = ({ user }) => {
 														<div className="assistant-verbose__header">
 															<span className="assistant-verbose__badge">Processing log</span>
 															<div className="assistant-verbose__actions">
+																{loadingTimingLabel && (
+																	<span className="assistant-loading__timing">{loadingTimingLabel}</span>
+																)}
 																<div className="assistant-loading__dots" aria-hidden="true">
 																	<span />
 																	<span />
@@ -1330,6 +1406,9 @@ const Main = ({ user }) => {
 													<div className="assistant-loading">
 														<div className="assistant-loading__header">
 															<span className="assistant-loading__badge">Processing</span>
+															{loadingTimingLabel && (
+																<span className="assistant-loading__timing">{loadingTimingLabel}</span>
+															)}
 															<div className="assistant-loading__dots" aria-hidden="true">
 																<span />
 																<span />
@@ -1360,7 +1439,7 @@ const Main = ({ user }) => {
 										</div>
 									</div>
 								)}
-								</div>
+							</div>
 							{canShowFeedback &&
 								<div className="result-data feedback-row" ref={agentDataRef} style={{ overflow: 'auto' }}>
 									{downloadData && (

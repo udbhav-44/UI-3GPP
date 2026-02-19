@@ -25,7 +25,7 @@ CORS(app)
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 PIPELINE_ROOT = os.path.abspath(
-    os.getenv("PIPELINE_ROOT", os.path.join(BASE_DIR, "..", "3GPP-pipeline"))
+    os.getenv("PIPELINE_ROOT", os.path.join(BASE_DIR, "..", "..", "Chat3GPP", "backend", "3GPP-pipeline"))
 )
 PIPELINE_ARTIFACTS_DIR = os.path.abspath(
     os.getenv("PIPELINE_ARTIFACTS_DIR", os.path.join(PIPELINE_ROOT, "output", "artifacts"))

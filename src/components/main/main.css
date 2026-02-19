@@ -551,7 +551,13 @@
 
 .chat-actions-row {
     margin-left: 54px;
-    margin-top: 6px;
+    margin-top: 4px;
+    align-self: flex-start;
+}
+
+.chat-timing-row {
+    margin-left: 54px;
+    margin-top: 4px;
     align-self: flex-start;
 }
 
@@ -559,6 +565,14 @@
     display: inline-flex;
     align-items: center;
     gap: 8px;
+}
+
+.chat-timing {
+    font-size: 0.76rem;
+    color: #6b7280;
+    line-height: 1.2;
+    letter-spacing: 0.01em;
+    display: inline-block;
 }
 
 .chat-bubble.assistant {
@@ -746,6 +760,13 @@
     border-radius: 999px;
     background: rgba(117, 217, 31, 0.2);
     color: #1f2937;
+}
+
+.assistant-loading__timing {
+    font-size: 0.76rem;
+    color: #6b7280;
+    line-height: 1.2;
+    white-space: nowrap;
 }
 
 .assistant-loading__dots {
@@ -1182,6 +1203,11 @@
   }
 
   .result-data.feedback-row {
+    margin-left: 0;
+  }
+
+  .chat-actions-row,
+  .chat-timing-row {
     margin-left: 0;
   }
 
